@@ -1,0 +1,88 @@
+# ============================================================
+# OmniThings .gitignore
+# ============================================================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.manifest
+*.spec
+pip-wheel-metadata/
+.installed.cfg
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing / coverage
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Node.js ----
+node_modules/
+.npm
+.yarn-integrity
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+vite.config.ts.timestamp-*
+
+# ---- Environment / Secrets ----
+.env
+.env.*
+!.env.example
+*.local
+
+# ---- IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Docker ----
+*.tar
+docker-compose.override.yml
+
+# ---- Logs / Temp ----
+*.log
+logs/
+tmp/
+*.tmp
+
+# ---- Agent worktrees (internal) ----
+.claude/worktrees/
+.workbuddy/
+.learnings/

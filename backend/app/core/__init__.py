@@ -1,0 +1,1 @@
+"""Omnithings core package."""

@@ -1,0 +1,1 @@
+"""OmniThings API routes package."""

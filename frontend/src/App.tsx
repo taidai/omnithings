@@ -1,0 +1,319 @@
+import { useEffect, useState, useCallback, useRef } from 'react'
+import {
+  fetchNodes, fetchTags, fetchHealth, updateTag, connectTelemetryWS,
+  type Node, type Tag, type HealthStatus, type TelemetryUpdate,
+} from './api/client'
+
+// ── 管道状态条 ──
+function PipelineBar({ health }: { health: HealthStatus | null }) {
+  if (!health) return null
+  const p = health.pipeline
+  const isOk = p.status === 'running' && health.components.mqtt.status === 'connected'
+
+  return (
+    <div className="neu-card px-4 py-2 mb-4 flex items-center gap-6 text-xs">
+      <div className="flex items-center">
+        <span className={`status-dot ${isOk ? 'ok' : 'error'}`} />
+        <span className="font-medium">{isOk ? 'Pipeline 运行中' : 'Pipeline 异常'}</span>
+      </div>
+      <div className="text-gray-500">
+        消息: <span className="font-mono-value">{p.messages_received.toLocaleString()}</span>
+      </div>
+      <div className="text-gray-500">
+        入库: <span className="font-mono-value">{p.points_written_db.toLocaleString()}</span>
+      </div>
+      <div className="text-gray-500">
+        MQTT: <span className={health.components.mqtt.status === 'connected' ? 'text-green-600' : 'text-red-500'}>{health.components.mqtt.status}</span>
+      </div>
+      <div className="text-gray-500">
+        最后消息: {p.last_message_at ? new Date(p.last_message_at).toLocaleTimeString() : '—'}
+      </div>
+      <div className="ml-auto text-gray-400">v{health.version}</div>
+    </div>
+  )
+}
+
+// ── 可编辑数值单元格 ──
+function EditableCell({
+  value, onSave, disabled, className = '',
+}: {
+  value: number
+  onSave: (v: number) => Promise<void>
+  disabled?: boolean
+  className?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [editVal, setEditVal] = useState(String(value))
+  const [saving, setSaving] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.select()
+    }
+  }, [editing])
+
+  const handleSave = async () => {
+    const num = parseFloat(editVal)
+    if (isNaN(num) || num === value) {
+      setEditing(false)
+      setEditVal(String(value))
+      return
+    }
+    setSaving(true)
+    try {
+      await onSave(num)
+      setEditing(false)
+    } catch {
+      alert('保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (disabled) {
+    return <span className={`font-mono-value text-gray-500 ${className}`}>{value}</span>
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="number"
+        step="any"
+        value={editVal}
+        onChange={(e) => setEditVal(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleSave()
+          if (e.key === 'Escape') { setEditing(false); setEditVal(String(value)) }
+        }}
+        disabled={saving}
+        className="neu-input w-20 px-2 py-1 text-xs font-mono-value text-center editable-cell editing"
+      />
+    )
+  }
+
+  return (
+    <span
+      className={`editable-cell font-mono-value ${className}`}
+      onClick={() => setEditing(true)}
+      title="点击编辑"
+    >
+      {value}
+    </span>
+  )
+}
+
+// ── 主表格组件 ──
+function TagsTable({ tags, onTagUpdate, realtimeValues }: {
+  tags: Tag[]
+  onTagUpdate: () => void
+  realtimeValues: Map<string, TelemetryUpdate>
+}) {
+  const handleUpdateOffset = async (tagId: string, newOffset: number) => {
+    await updateTag(tagId, { value_offset: newOffset })
+    onTagUpdate()
+  }
+
+  const handleUpdateScale = async (tagId: string, newScale: number) => {
+    await updateTag(tagId, { scale_factor: newScale })
+    onTagUpdate()
+  }
+
+  return (
+    <div className="neu-card overflow-hidden">
+      <div className="table-container overflow-x-auto max-h-[600px] overflow-y-auto">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-[#f0f2f5] z-10">
+            <tr className="border-b border-gray-200">
+              <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">节点</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">点位名</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">类型</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">单位</th>
+              <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">原始值</th>
+              <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">工程值</th>
+              <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">Scale</th>
+              <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">Offset</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">公式</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tags.map((tag) => {
+              const rt = realtimeValues.get(tag.id)
+              const rawVal = rt?.raw_value ?? tag.raw_value
+              const engVal = rt?.eng_value ?? tag.eng_value
+
+              return (
+                <tr key={tag.id} className="border-b border-gray-100 hover:bg-white/30">
+                  <td className="px-3 py-2 text-gray-600">{tag.node_name}</td>
+                  <td className="px-3 py-2">
+                    <div>
+                      <div className="font-medium text-gray-800">{tag.display_name || tag.name}</div>
+                      <div className="text-gray-400 text-[11px]">{tag.name}</div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                      tag.data_type === 'FLOAT' ? 'bg-blue-100 text-blue-700' :
+                      tag.data_type === 'INT' ? 'bg-purple-100 text-purple-700' :
+                      tag.data_type === 'BOOL' ? 'bg-amber-100 text-amber-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>{tag.data_type}</span>
+                  </td>
+                  <td className="px-3 py-2 text-gray-500">{tag.unit || '—'}</td>
+                  <td className={`px-3 py-2 text-right font-mono-value ${rt ? 'value-flash' : ''}`}>
+                    {rawVal !== null && rawVal !== undefined ? (
+                      <span className="text-gray-700">{typeof rawVal === 'number' ? rawVal.toFixed(2) : String(rawVal)}</span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
+                  <td className={`px-3 py-2 text-right font-mono-value ${rt ? 'value-flash' : ''}`}>
+                    {engVal !== null && engVal !== undefined ? (
+                      <span className="text-[#389e0d] font-medium">{typeof engVal === 'number' ? engVal.toFixed(4) : String(engVal)}</span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <EditableCell
+                      value={tag.scale_factor}
+                      onSave={(v) => handleUpdateScale(tag.id, v)}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <EditableCell
+                      value={tag.value_offset}
+                      onSave={(v) => handleUpdateOffset(tag.id, v)}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center text-[11px] text-gray-400 font-mono-value">
+                    ({rawVal !== null ? (typeof rawVal === 'number' ? rawVal.toFixed(1) : '?') : '?'}
+                    {tag.value_offset >= 0 ? '+' : ''}{tag.value_offset})×{tag.scale_factor}
+                    ={engVal !== null ? (typeof engVal === 'number' ? engVal.toFixed(2) : '?') : '?'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── 主页面 ──
+export default function App() {
+  const [nodes, setNodes] = useState<Node[]>([])
+  const [selectedNode, setSelectedNode] = useState<string>('')
+  const [tags, setTags] = useState<Tag[]>([])
+  const [health, setHealth] = useState<HealthStatus | null>(null)
+  const [realtimeValues, setRealtimeValues] = useState<Map<string, TelemetryUpdate>>(new Map())
+  const [loading, setLoading] = useState(false)
+
+  // 加载节点列表
+  useEffect(() => {
+    fetchNodes().then((n) => {
+      setNodes(n.filter((node) => node.layer >= 3)) // 只显示 Device/Tag 层
+    })
+  }, [])
+
+  // 加载健康状态 (轮询)
+  useEffect(() => {
+    const poll = () => fetchHealth().then(setHealth).catch(() => {})
+    poll()
+    const id = setInterval(poll, 5000)
+    return () => clearInterval(id)
+  }, [])
+
+  // 加载点位
+  const loadTags = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await fetchTags(selectedNode || undefined)
+      setTags(data.tags)
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedNode])
+
+  useEffect(() => { loadTags() }, [loadTags])
+
+  // WebSocket 实时值
+  useEffect(() => {
+    const tagIds = tags.map((t) => t.id)
+    if (tagIds.length === 0) return
+
+    const cleanup = connectTelemetryWS((updates) => {
+      setRealtimeValues((prev) => {
+        const next = new Map(prev)
+        for (const u of updates) {
+          next.set(u.tag_id, u)
+        }
+        return next
+      })
+    }, tagIds)
+
+    return cleanup
+  }, [tags])
+
+  return (
+    <div className="min-h-screen bg-[#f0f2f5] p-6">
+      <div className="max-w-[1600px] mx-auto">
+        {/* 页面标题 */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-xl font-bold text-gray-800">点位管理</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Neuron → NanoMQ → FastAPI → TimescaleDB</p>
+          </div>
+          <div className="text-xs text-gray-400">OmniThings F0</div>
+        </div>
+
+        {/* 管道状态条 */}
+        <PipelineBar health={health} />
+
+        {/* 工具栏 */}
+        <div className="neu-card p-4 mb-4 flex items-center gap-4">
+          <label className="text-xs font-medium text-gray-600">节点筛选:</label>
+          <select
+            value={selectedNode}
+            onChange={(e) => setSelectedNode(e.target.value)}
+            className="neu-input px-3 py-1.5 text-xs bg-transparent min-w-[200px]"
+          >
+            <option value="">全部节点 ({tags.length} 个点位)</option>
+            {nodes.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name} ({n.tag_count} tags)
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={loadTags}
+            disabled={loading}
+            className="neu-btn px-4 py-1.5 text-xs font-medium text-[#389e0d] disabled:opacity-50"
+          >
+            {loading ? '加载中...' : '刷新'}
+          </button>
+
+          <div className="ml-auto text-xs text-gray-500">
+            共 {tags.length} 个点位
+          </div>
+        </div>
+
+        {/* 点位表格 */}
+        <TagsTable
+          tags={tags}
+          onTagUpdate={loadTags}
+          realtimeValues={realtimeValues}
+        />
+
+        {/* 底部信息 */}
+        <div className="mt-4 text-center text-[11px] text-gray-400">
+          <p>点击 Scale / Offset 列可直接编辑 · 修改后工程值自动重算 · WebSocket 实时推送最新值</p>
+        </div>
+      </div>
+    </div>
+  )
+}
