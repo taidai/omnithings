@@ -150,6 +150,48 @@ export async function fetchTagHistory(tagId: string, range: '1h' | '24h' | '7d')
   return res.json()
 }
 
+export interface TelemetryPoint {
+  ts: string
+  tag_id: string
+  tag_name: string
+  node_name: string
+  raw_value: number | null
+  eng_value: number | null
+  quality: number | null
+}
+
+export interface TelemetryResponse {
+  points: TelemetryPoint[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export async function fetchTelemetry(
+  tagId?: string,
+  range: '1h' | '24h' | '7d' | 'all' = '1h',
+  page = 1,
+  pageSize = 50,
+): Promise<TelemetryResponse> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize), range })
+  if (tagId) params.set('tag_id', tagId)
+  const res = await fetch(`${API_BASE}/telemetry?${params}`)
+  return res.json()
+}
+
+export function exportTelemetryCsv(tagId?: string, range: '1h' | '24h' | '7d' | 'all' = '1h'): void {
+  const params = new URLSearchParams({ range })
+  if (tagId) params.set('tag_id', tagId)
+  const url = `${API_BASE}/telemetry/export?${params}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
 // ── WebSocket ──
 
 export type TelemetryCallback = (updates: TelemetryUpdate[]) => void

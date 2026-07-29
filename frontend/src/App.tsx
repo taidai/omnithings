@@ -4,6 +4,7 @@ import {
   type Node, type Tag, type HealthStatus, type TelemetryUpdate,
 } from './api/client'
 import TrendChart from './components/TrendChart'
+import TelemetryTable from './components/TelemetryTable'
 
 // ── 管道状态条 ──
 function PipelineBar({ health }: { health: HealthStatus | null }) {
@@ -296,6 +297,7 @@ export default function App() {
   const [batchScale, setBatchScale] = useState('')
   const [batchOffset, setBatchOffset] = useState('')
   const [batchSaving, setBatchSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState<'tags' | 'telemetry'>('tags')
   const pageSize = 50
 
   // 加载节点列表
@@ -395,19 +397,39 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#f0f2f5] p-6">
       <div className="max-w-[1600px] mx-auto">
-        {/* 页面标题 */}
+        {/* 页面标题 + Tab 切换 */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-xl font-bold text-gray-800">点位管理</h1>
+            <h1 className="text-xl font-bold text-gray-800">OmniThings F0</h1>
             <p className="text-xs text-gray-500 mt-0.5">Neuron → NanoMQ → FastAPI → TimescaleDB</p>
           </div>
-          <div className="text-xs text-gray-400">OmniThings F0</div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('tags')}
+              className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                activeTab === 'tags' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              点位管理
+            </button>
+            <button
+              onClick={() => setActiveTab('telemetry')}
+              className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                activeTab === 'telemetry' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              数据表查询
+            </button>
+          </div>
         </div>
 
         {/* 管道状态条 */}
         <PipelineBar health={health} />
 
-        {/* 工具栏 */}
+        {/* Tab 内容 */}
+        {activeTab === 'tags' ? (
+          <>
+            {/* 工具栏 */}
         <div className="neu-card p-4 mb-4 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-gray-600 whitespace-nowrap">节点:</label>
@@ -561,6 +583,10 @@ export default function App() {
         <div className="mt-4 text-center text-[11px] text-gray-400">
           <p>点击 Scale / Offset 列可直接编辑 · 修改后工程值自动重算 · WebSocket 实时推送最新值</p>
         </div>
+          </>
+        ) : (
+          <TelemetryTable />
+        )}
       </div>
     </div>
   )
