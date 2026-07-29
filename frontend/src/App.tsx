@@ -416,14 +416,6 @@ export default function App() {
               点位管理
             </button>
             <button
-              onClick={() => setActiveTab('telemetry')}
-              className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                activeTab === 'telemetry' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              数据表查询
-            </button>
-            <button
               onClick={() => setActiveTab('snapshots')}
               className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
                 activeTab === 'snapshots' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -611,8 +603,6 @@ export default function App() {
           <p>点击 Scale / Offset 列可直接编辑 · 修改后工程值自动重算 · WebSocket 实时推送最新值</p>
         </div>
           </>
-        ) : activeTab === 'telemetry' ? (
-          <TelemetryTable />
         ) : activeTab === 'snapshots' ? (
           <SnapshotTable />
         ) : activeTab === 'neuron' ? (
