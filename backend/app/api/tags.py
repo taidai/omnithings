@@ -55,6 +55,20 @@ class TagResponse(BaseModel):
     quality: int | None = None
 
 
+class HistoryPoint(BaseModel):
+    ts: str
+    raw_value: float | None
+    eng_value: float | None
+
+
+class HistoryResponse(BaseModel):
+    tag_id: str
+    tag_name: str
+    range: str
+    bucket: str
+    points: list[HistoryPoint]
+
+
 # ══════════════════════════════════════
 # Endpoints
 # ══════════════════════════════════════
@@ -199,6 +213,90 @@ async def get_tag(tag_id: UUID) -> dict:
                 )
 
     return tag
+
+
+@router.get("/tags/{tag_id}/history")
+async def get_tag_history(
+    tag_id: UUID,
+    range: str = Query("1h", pattern="^(1h|24h|7d)$", description="时间范围"),
+) -> dict:
+    """
+    查询点位历史趋势数据。
+
+    - 1h: 原始数据 (约 1-2s/条)
+    - 24h: 5 分钟聚合
+    - 7d: 30 分钟聚合
+    """
+    from app.services.telemetry_store import get_connection
+
+    # 确定 bucket 间隔
+    bucket_map = {
+        "1h": None,           # 原始数据
+        "24h": "5 minutes",
+        "7d": "30 minutes",
+    }
+    interval_map = {
+        "1h": "1 hour",
+        "24h": "24 hours",
+        "7d": "7 days",
+    }
+    bucket = bucket_map[range]
+    interval = interval_map[range]
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # 获取 tag 信息
+            cur.execute(
+                "SELECT name, display_name, scale_factor, value_offset FROM t_tags WHERE id = %s",
+                (tag_id,),
+            )
+            tag_row = cur.fetchone()
+            if not tag_row:
+                raise HTTPException(status_code=404, detail="Tag not found")
+            tag_name, display_name, scale_factor, value_offset = tag_row
+
+            if bucket:
+                # 聚合查询
+                query = """
+                SELECT
+                    time_bucket(%s::interval, ts) AS bucket_ts,
+                    AVG(COALESCE(value_float, value_int::float)) AS raw_value
+                FROM t_telemetry
+                WHERE tag_id = %s AND ts > NOW() - %s::interval
+                GROUP BY bucket_ts
+                ORDER BY bucket_ts ASC
+                """
+                cur.execute(query, (bucket, tag_id, interval))
+            else:
+                # 原始数据，但限制最多 2000 条防止爆内存
+                query = """
+                SELECT ts AS bucket_ts, COALESCE(value_float, value_int::float) AS raw_value
+                FROM t_telemetry
+                WHERE tag_id = %s AND ts > NOW() - %s::interval
+                ORDER BY ts ASC
+                LIMIT 2000
+                """
+                cur.execute(query, (tag_id, interval))
+
+            points = []
+            for row in cur.fetchall():
+                ts, raw = row
+                eng = None
+                if raw is not None:
+                    eng = round((float(raw) + (value_offset or 0)) * (scale_factor or 1), 4)
+                points.append({
+                    "ts": ts.isoformat(),
+                    "raw_value": round(float(raw), 4) if raw is not None else None,
+                    "eng_value": eng,
+                })
+
+    return {
+        "tag_id": str(tag_id),
+        "tag_name": display_name or tag_name,
+        "range": range,
+        "bucket": bucket or "raw",
+        "points": points,
+    }
 
 
 @router.put("/tags/{tag_id}")
