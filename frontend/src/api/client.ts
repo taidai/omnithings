@@ -55,6 +55,38 @@ export interface HealthStatus {
     points_written_db: number
     last_message_at: string | null
   }
+  validation?: {
+    mqtt_connection: { status: string; message: string }
+    message_parsing: { status: string; success_rate: number; parse_errors: number }
+    normalization: { status: string; points_normalized: number; unmatched_rules: number }
+    db_write: { status: string; write_errors: number; buffered_records: number; last_write_at: string | null }
+  }
+}
+
+export interface NeuronNode {
+  name: string
+  plugin: string
+  state?: number
+}
+
+export interface NeuronGroup {
+  name: string
+  interval: number
+}
+
+export interface NeuronTag {
+  name: string
+  address: string
+  type?: number
+}
+
+export interface Category {
+  id: string
+  name: string
+  node_type: string
+  snapshot_enabled: boolean
+  retention_days: number
+  description: string | null
 }
 
 export interface TelemetryUpdate {
@@ -71,6 +103,97 @@ export async function fetchNodes(): Promise<Node[]> {
   const res = await fetch(`${API_BASE}/nodes`)
   const data = await res.json()
   return data.nodes || []
+}
+
+// ── Neuron Proxy API ──
+
+export async function fetchNeuronNodes(): Promise<NeuronNode[]> {
+  const res = await fetch(`${API_BASE}/neuron/nodes`)
+  const data = await res.json()
+  return data.nodes || []
+}
+
+export async function createNeuronNode(node: {
+  name: string
+  plugin: string
+  host?: string
+  port?: number
+  device?: string
+  baud?: number
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/neuron/nodes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(node),
+  })
+  if (!res.ok) throw new Error(`Create node failed: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteNeuronNode(name: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/neuron/nodes/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`Delete node failed: ${res.status}`)
+  return res.json()
+}
+
+export async function startNeuronNode(name: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/neuron/nodes/${encodeURIComponent(name)}/start`, {
+    method: 'POST',
+  })
+  return res.json()
+}
+
+export async function stopNeuronNode(name: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/neuron/nodes/${encodeURIComponent(name)}/stop`, {
+    method: 'POST',
+  })
+  return res.json()
+}
+
+export async function fetchNeuronGroups(node: string): Promise<NeuronGroup[]> {
+  const res = await fetch(`${API_BASE}/neuron/groups?node=${encodeURIComponent(node)}`)
+  const data = await res.json()
+  return data.groups || []
+}
+
+export async function fetchNeuronTags(node: string, group: string): Promise<NeuronTag[]> {
+  const res = await fetch(`${API_BASE}/neuron/tags?node=${encodeURIComponent(node)}&group=${encodeURIComponent(group)}`)
+  const data = await res.json()
+  return data.tags || []
+}
+
+// ── Category API ──
+
+export async function fetchCategories(): Promise<Category[]> {
+  const res = await fetch(`${API_BASE}/categories`)
+  const data = await res.json()
+  return data.categories || []
+}
+
+export async function createCategory(category: {
+  name: string
+  node_type: string
+  snapshot_enabled: boolean
+  retention_days: number
+  description?: string
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/categories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(category),
+  })
+  if (!res.ok) throw new Error(`Create category failed: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteCategory(id: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/categories/${id}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`Delete category failed: ${res.status}`)
+  return res.json()
 }
 
 export async function fetchTags(

@@ -108,6 +108,12 @@ def create_app() -> FastAPI:
     from app.api.snapshots import router as snapshots_router
     app.include_router(snapshots_router, prefix="/api/v1", tags=["Snapshots"])
 
+    from app.api.neuron import router as neuron_router
+    app.include_router(neuron_router, prefix="/api/v1", tags=["Neuron"])
+
+    from app.api.categories import router as categories_router
+    app.include_router(categories_router, prefix="/api/v1", tags=["Categories"])
+
     # ---- Static Frontend (F0 可视化 V1) ----
     # 后端直接托管前端 dist，无需独立 nginx 容器
     import os

@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     # ---- Neuron (设备接入网关) ----
     neuron_api_url: str = "http://neuron:7000"
     neuron_api_version: str = "/api/v2"
+    neuron_username: str = "admin"
+    neuron_password: str = "0000"
 
     # ---- CORS ----
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]

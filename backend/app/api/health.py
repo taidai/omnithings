@@ -52,6 +52,7 @@ async def health_check() -> dict:
     # ---- Pipeline 运行状态 ----
     pipe_status = "not_started"
     pipe_metrics = {}
+    validation_points = {}
     if _pipeline:
         m = _pipeline.metrics
         pipe_status = m.status.value
@@ -65,6 +66,36 @@ async def health_check() -> dict:
             "db_write_errors": m.db_write_errors,
             "last_message_at": m.last_message_at.isoformat() if m.last_message_at else None,
             "uptime_seconds": round(_pipeline.uptime_seconds, 2),
+        }
+
+        # ---- 验证点状态 ----
+        total = m.messages_received
+        parse_ok = m.messages_parsed_ok
+        parse_err = m.messages_parse_error
+        db_err = m.db_write_errors
+        buffered = len(_pipeline._buffer) if hasattr(_pipeline, '_buffer') else 0
+
+        validation_points = {
+            "mqtt_connection": {
+                "status": "ok" if mqtt_ok else "error",
+                "message": "MQTT connected" if mqtt_ok else "MQTT disconnected",
+            },
+            "message_parsing": {
+                "status": "ok" if parse_err == 0 else ("warning" if parse_ok > parse_err * 10 else "error"),
+                "success_rate": round(parse_ok / total * 100, 1) if total > 0 else 0,
+                "parse_errors": parse_err,
+            },
+            "normalization": {
+                "status": "ok" if m.points_normalized > 0 else "warning",
+                "points_normalized": m.points_normalized,
+                "unmatched_rules": len(_pipeline._rules) - m.points_normalized if hasattr(_pipeline, '_rules') else 0,
+            },
+            "db_write": {
+                "status": "ok" if db_err == 0 else "error",
+                "write_errors": db_err,
+                "buffered_records": buffered,
+                "last_write_at": m.last_message_at.isoformat() if m.last_message_at else None,
+            },
         }
 
     overall = "ok"
@@ -86,6 +117,7 @@ async def health_check() -> dict:
             "neuron": {"status": "not_configured"},
         },
         "pipeline": pipe_metrics,
+        "validation": validation_points,
     }
 
 
