@@ -102,6 +102,9 @@ def create_app() -> FastAPI:
     from app.api.telemetry import router as telemetry_router
     app.include_router(telemetry_router, prefix="/api/v1", tags=["Telemetry"])
 
+    from app.api.admin import router as admin_router
+    app.include_router(admin_router, prefix="/api/v1", tags=["Admin"])
+
     # ---- Static Frontend (F0 可视化 V1) ----
     # 后端直接托管前端 dist，无需独立 nginx 容器
     import os

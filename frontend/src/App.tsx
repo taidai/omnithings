@@ -5,6 +5,7 @@ import {
 } from './api/client'
 import TrendChart from './components/TrendChart'
 import TelemetryTable from './components/TelemetryTable'
+import AdminPanel from './components/AdminPanel'
 
 // ── 管道状态条 ──
 function PipelineBar({ health }: { health: HealthStatus | null }) {
@@ -297,7 +298,7 @@ export default function App() {
   const [batchScale, setBatchScale] = useState('')
   const [batchOffset, setBatchOffset] = useState('')
   const [batchSaving, setBatchSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'tags' | 'telemetry'>('tags')
+  const [activeTab, setActiveTab] = useState<'tags' | 'telemetry' | 'admin'>('tags')
   const pageSize = 50
 
   // 加载节点列表
@@ -419,6 +420,14 @@ export default function App() {
               }`}
             >
               数据表查询
+            </button>
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                activeTab === 'admin' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              开发者工具
             </button>
           </div>
         </div>
@@ -584,8 +593,10 @@ export default function App() {
           <p>点击 Scale / Offset 列可直接编辑 · 修改后工程值自动重算 · WebSocket 实时推送最新值</p>
         </div>
           </>
-        ) : (
+        ) : activeTab === 'telemetry' ? (
           <TelemetryTable />
+        ) : (
+          <AdminPanel />
         )}
       </div>
     </div>

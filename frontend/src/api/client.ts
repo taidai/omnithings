@@ -192,6 +192,61 @@ export function exportTelemetryCsv(tagId?: string, range: '1h' | '24h' | '7d' | 
   document.body.removeChild(a)
 }
 
+// ── Admin / Developer API ──
+
+export interface PipelineConfig {
+  batch_size: number
+  flush_interval_sec: number
+}
+
+export async function fetchPipelineConfig(): Promise<PipelineConfig> {
+  const res = await fetch(`${API_BASE}/pipeline/config`)
+  return res.json()
+}
+
+export async function updatePipelineConfig(config: PipelineConfig): Promise<any> {
+  const res = await fetch(`${API_BASE}/pipeline/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  if (!res.ok) throw new Error(`Update failed: ${res.status}`)
+  return res.json()
+}
+
+export interface SqlQueryResult {
+  columns: string[]
+  rows: any[][]
+  row_count: number
+  sql: string
+}
+
+export async function executeSql(sql: string, limit = 500): Promise<SqlQueryResult> {
+  const res = await fetch(`${API_BASE}/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql, limit }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }))
+    throw new Error(err.detail || `Query failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function truncateTable(table: string, confirm: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/admin/truncate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ table, confirm }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }))
+    throw new Error(err.detail || `Truncate failed: ${res.status}`)
+  }
+  return res.json()
+}
+
 // ── WebSocket ──
 
 export type TelemetryCallback = (updates: TelemetryUpdate[]) => void
