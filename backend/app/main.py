@@ -99,12 +99,45 @@ def create_app() -> FastAPI:
     from app.api.websocket import router as ws_router
     app.include_router(ws_router, prefix="/api/v1", tags=["Telemetry WS"])
 
-    # 根路径 → 重定向到 API 文档 (浏览器友好)
-    from fastapi.responses import RedirectResponse
+    # ---- Static Frontend (F0 可视化 V1) ----
+    # 后端直接托管前端 dist，无需独立 nginx 容器
+    import os
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+    from starlette.exceptions import HTTPException as StarletteHTTPException
 
-    @app.get("/", include_in_schema=False)
-    async def root() -> RedirectResponse:
-        return RedirectResponse(url="/api/docs")
+    FRONTEND_DIST = os.environ.get("FRONTEND_DIST", "/app/frontend/dist")
+
+    if os.path.isdir(FRONTEND_DIST):
+        _assets = os.path.join(FRONTEND_DIST, "assets")
+        if os.path.isdir(_assets):
+            app.mount("/assets", StaticFiles(directory=_assets), name="assets")
+            logger.info("[Main] Frontend assets mounted at /assets")
+
+        # SPA catch-all — 非 API 路由回退到 index.html
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def spa_fallback(full_path: str):
+            # 绝不拦截 API / 文档路由
+            if full_path.startswith(("api/", "docs", "redoc", "openapi")):
+                raise StarletteHTTPException(status_code=404)
+            # 尝试静态文件 (favicon, robots.txt 等)
+            candidate = os.path.join(FRONTEND_DIST, full_path)
+            if os.path.isfile(candidate):
+                return FileResponse(candidate)
+            # SPA 回退 → index.html
+            index = os.path.join(FRONTEND_DIST, "index.html")
+            if os.path.isfile(index):
+                return FileResponse(index)
+            raise StarletteHTTPException(status_code=404)
+
+        logger.info("[Main] Frontend SPA served from {}", FRONTEND_DIST)
+    else:
+        # 无前端 dist 时保留 API 文档重定向
+        from fastapi.responses import RedirectResponse
+
+        @app.get("/", include_in_schema=False)
+        async def root() -> RedirectResponse:
+            return RedirectResponse(url="/api/docs")
 
     # TODO Phase 1 S4: app.include_router(telemetry_router, prefix="/api/v1")
     # TODO Phase 2:     app.include_router(virtual_points_router, prefix="/api/v1")
