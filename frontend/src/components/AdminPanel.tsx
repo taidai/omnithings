@@ -3,6 +3,7 @@ import {
   fetchPipelineConfig, updatePipelineConfig, executeSql, truncateTable,
   type PipelineConfig, type SqlQueryResult,
 } from '../api/client'
+import DataBrowser from './DataBrowser'
 
 export default function AdminPanel() {
   // 入库节拍
@@ -115,6 +116,9 @@ export default function AdminPanel() {
           批量大小：缓冲区达到该条数时立即写入 DB · Flush 间隔：定时强制写入的时间间隔
         </p>
       </div>
+
+      {/* 级联数据查询 */}
+      <DataBrowser />
 
       {/* SQL 查询 */}
       <div className="neu-card p-4">

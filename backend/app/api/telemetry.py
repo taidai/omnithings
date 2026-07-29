@@ -126,6 +126,7 @@ async def list_telemetry(
 @router.get("/telemetry/export")
 async def export_telemetry_csv(
     tag_id: str | None = Query(None, description="按点位过滤"),
+    node_id: str | None = Query(None, description="按节点过滤"),
     range: str = Query("1h", pattern="^(1h|24h|7d|all)$", description="时间范围"),
 ) -> StreamingResponse:
     """
@@ -142,6 +143,9 @@ async def export_telemetry_csv(
     if tag_id:
         conditions.append("t.tag_id = %s")
         params.append(UUID(tag_id))
+    if node_id:
+        conditions.append("tag.node_id = %s")
+        params.append(UUID(node_id))
 
     interval_map = {
         "1h": "1 hour",

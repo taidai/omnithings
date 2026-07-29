@@ -296,16 +296,19 @@ export async function fetchTelemetry(
   range: '1h' | '24h' | '7d' | 'all' = '1h',
   page = 1,
   pageSize = 50,
+  nodeId?: string,
 ): Promise<TelemetryResponse> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize), range })
   if (tagId) params.set('tag_id', tagId)
+  if (nodeId) params.set('node_id', nodeId)
   const res = await fetch(`${API_BASE}/telemetry?${params}`)
   return res.json()
 }
 
-export function exportTelemetryCsv(tagId?: string, range: '1h' | '24h' | '7d' | 'all' = '1h'): void {
+export function exportTelemetryCsv(tagId?: string, range: '1h' | '24h' | '7d' | 'all' = '1h', nodeId?: string): void {
   const params = new URLSearchParams({ range })
   if (tagId) params.set('tag_id', tagId)
+  if (nodeId) params.set('node_id', nodeId)
   const url = `${API_BASE}/telemetry/export?${params}`
   const a = document.createElement('a')
   a.href = url
