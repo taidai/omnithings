@@ -82,6 +82,8 @@ async def list_tags(
     enabled: bool = Query(True, description="只看启用点位"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(50, ge=1, le=200, description="每页条数"),
+    sort_by: str = Query("sort_order", description="排序字段"),
+    sort_order: str = Query("asc", pattern="^(asc|desc)$", description="排序方向"),
 ) -> dict:
     """
     分页查询点位列表，附带每个点位的最新值。
@@ -104,6 +106,22 @@ async def list_tags(
         params.extend([f"%{search}%", f"%{search}%"])
 
     where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+    # 排序白名单
+    sort_map = {
+        "name": "t.name",
+        "display_name": "t.display_name",
+        "node_name": "n.name",
+        "data_type": "t.data_type",
+        "unit": "t.unit",
+        "raw_value": "latest.value",
+        "eng_value": "eng_value",
+        "scale_factor": "t.scale_factor",
+        "value_offset": "t.value_offset",
+        "sort_order": "t.sort_order",
+    }
+    order_by = sort_map.get(sort_by, "t.sort_order")
+    order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
 
     # 分页 offset
     offset = (page - 1) * page_size
@@ -134,7 +152,7 @@ async def list_tags(
         LIMIT 1
     ) latest ON TRUE
     {where}
-    ORDER BY t.sort_order, t.name
+    ORDER BY {order_by} {order_dir}, t.sort_order, t.name
     LIMIT %s OFFSET %s
     """
 
@@ -399,6 +417,62 @@ async def get_tag_history(
         "bucket": bucket or "raw",
         "points": points,
     }
+
+
+class BatchUpdateRequest(BaseModel):
+    """批量更新请求。"""
+    tag_ids: list[str] = Field(..., description="点位 ID 列表")
+    scale_factor: float | None = Field(None, description="统一缩放系数")
+    value_offset: float | None = Field(None, description="统一偏移量")
+
+
+@router.put("/tags/batch")
+async def batch_update_tags(req: BatchUpdateRequest) -> dict:
+    """
+    批量更新点位的 scale_factor / value_offset。
+    """
+    from app.services.telemetry_store import get_connection
+
+    if not req.tag_ids:
+        return {"status": "no_change", "updated": 0}
+
+    updates = []
+    params: list = []
+    if req.scale_factor is not None:
+        updates.append("scale_factor = %s")
+        params.append(req.scale_factor)
+    if req.value_offset is not None:
+        updates.append("value_offset = %s")
+        params.append(req.value_offset)
+
+    if not updates:
+        return {"status": "no_change", "updated": 0}
+
+    updates.append("updated_at = %s")
+    params.append(datetime.now(timezone.utc))
+
+    # 构建 IN 子句
+    uuid_params = [UUID(tid) for tid in req.tag_ids]
+    placeholders = ",".join(["%s"] * len(uuid_params))
+    params.extend(uuid_params)
+
+    query = f"""
+    UPDATE t_tags
+    SET {", ".join(updates)}
+    WHERE id IN ({placeholders})
+    """
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                conn.commit()
+                updated = cur.rowcount
+
+        return {"status": "ok", "updated": updated}
+    except Exception as e:
+        logger.error("[API/tags/batch] Update failed: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/tags/{tag_id}")

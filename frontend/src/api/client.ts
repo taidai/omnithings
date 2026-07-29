@@ -78,11 +78,27 @@ export async function fetchTags(
   page = 1,
   pageSize = 50,
   search?: string,
+  dataType?: string,
+  sortBy?: string,
+  sortOrder?: 'asc' | 'desc',
 ): Promise<{ tags: Tag[]; total: number; page: number; page_size: number; total_pages: number }> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   if (nodeId) params.set('node_id', nodeId)
   if (search) params.set('search', search)
+  if (dataType) params.set('data_type', dataType)
+  if (sortBy) params.set('sort_by', sortBy)
+  if (sortOrder) params.set('sort_order', sortOrder)
   const res = await fetch(`${API_BASE}/tags?${params}`)
+  return res.json()
+}
+
+export async function batchUpdateTags(tagIds: string[], updates: { scale_factor?: number; value_offset?: number }): Promise<any> {
+  const res = await fetch(`${API_BASE}/tags/batch`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tag_ids: tagIds, ...updates }),
+  })
+  if (!res.ok) throw new Error(`Batch update failed: ${res.status}`)
   return res.json()
 }
 

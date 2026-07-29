@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import {
-  fetchNodes, fetchTags, fetchHealth, updateTag, connectTelemetryWS, exportTagsCsv,
+  fetchNodes, fetchTags, fetchHealth, updateTag, connectTelemetryWS, exportTagsCsv, batchUpdateTags,
   type Node, type Tag, type HealthStatus, type TelemetryUpdate,
 } from './api/client'
 import TrendChart from './components/TrendChart'
@@ -106,12 +106,28 @@ function EditableCell({
   )
 }
 
+// ── 表头排序配置 ──
+const SORTABLE_COLUMNS = [
+  { key: 'name', label: '点位名' },
+  { key: 'data_type', label: '类型' },
+  { key: 'unit', label: '单位' },
+  { key: 'raw_value', label: '原始值' },
+  { key: 'eng_value', label: '工程值' },
+  { key: 'scale_factor', label: 'Scale' },
+  { key: 'value_offset', label: 'Offset' },
+] as const
+
 // ── 主表格组件 ──
-function TagsTable({ tags, onTagUpdate, realtimeValues, onShowTrend }: {
+function TagsTable({ tags, onTagUpdate, realtimeValues, onShowTrend, selectedIds, onSelectionChange, sortBy, sortOrder, onSort }: {
   tags: Tag[]
   onTagUpdate: () => void
   realtimeValues: Map<string, TelemetryUpdate>
   onShowTrend: (tag: Tag) => void
+  selectedIds: Set<string>
+  onSelectionChange: (ids: Set<string>) => void
+  sortBy: string
+  sortOrder: 'asc' | 'desc'
+  onSort: (column: string) => void
 }) {
   const handleUpdateOffset = async (tagId: string, newOffset: number) => {
     await updateTag(tagId, { value_offset: newOffset })
@@ -123,20 +139,63 @@ function TagsTable({ tags, onTagUpdate, realtimeValues, onShowTrend }: {
     onTagUpdate()
   }
 
+  const allSelected = tags.length > 0 && tags.every((t) => selectedIds.has(t.id))
+  const someSelected = tags.some((t) => selectedIds.has(t.id))
+
+  const toggleAll = () => {
+    if (allSelected) {
+      onSelectionChange(new Set())
+    } else {
+      onSelectionChange(new Set(tags.map((t) => t.id)))
+    }
+  }
+
+  const toggleOne = (id: string) => {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onSelectionChange(next)
+  }
+
+  const SortHeader = ({ column, label, align = 'left' }: { column: string; label: string; align?: 'left' | 'right' }) => (
+    <th
+      className={`px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 ${
+        align === 'right' ? 'text-right' : 'text-left'
+      }`}
+      onClick={() => onSort(column)}
+    >
+      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+        {label}
+        {sortBy === column && (
+          <span className="text-[#52c41a]">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+        )}
+      </div>
+    </th>
+  )
+
   return (
     <div className="neu-card overflow-hidden">
       <div className="table-container overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-[#f0f2f5] z-10">
             <tr className="border-b border-gray-200">
+              <th className="px-3 py-2 w-10">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
+                  onChange={toggleAll}
+                  className="w-4 h-4 accent-[#52c41a]"
+                />
+              </th>
               <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">节点</th>
-              <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">点位名</th>
-              <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">类型</th>
-              <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">单位</th>
-              <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">原始值</th>
-              <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">工程值</th>
-              <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">Scale</th>
-              <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">Offset</th>
+              <SortHeader column="name" label="点位名" />
+              <SortHeader column="data_type" label="类型" />
+              <SortHeader column="unit" label="单位" />
+              <SortHeader column="raw_value" label="原始值" align="right" />
+              <SortHeader column="eng_value" label="工程值" align="right" />
+              <SortHeader column="scale_factor" label="Scale" align="right" />
+              <SortHeader column="value_offset" label="Offset" align="right" />
               <th className="text-center px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">公式</th>
             </tr>
           </thead>
@@ -147,7 +206,15 @@ function TagsTable({ tags, onTagUpdate, realtimeValues, onShowTrend }: {
               const engVal = rt?.eng_value ?? tag.eng_value
 
               return (
-                <tr key={tag.id} className="border-b border-gray-100 hover:bg-white/30">
+                <tr key={tag.id} className={`border-b border-gray-100 hover:bg-white/30 ${selectedIds.has(tag.id) ? 'bg-[#52c41a]/5' : ''}`}>
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(tag.id)}
+                      onChange={() => toggleOne(tag.id)}
+                      className="w-4 h-4 accent-[#52c41a]"
+                    />
+                  </td>
                   <td className="px-3 py-2 text-gray-600">{tag.node_name}</td>
                   <td className="px-3 py-2">
                     <button
@@ -222,6 +289,13 @@ export default function App() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
+  const [dataType, setDataType] = useState('')
+  const [sortBy, setSortBy] = useState('sort_order')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchScale, setBatchScale] = useState('')
+  const [batchOffset, setBatchOffset] = useState('')
+  const [batchSaving, setBatchSaving] = useState(false)
   const pageSize = 50
 
   // 加载节点列表
@@ -239,26 +313,34 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
-  // 搜索防抖
+  // 搜索/筛选防抖
   useEffect(() => {
     const timer = setTimeout(() => {
       setPage(1)
     }, 300)
     return () => clearTimeout(timer)
-  }, [search])
+  }, [search, dataType])
 
   // 加载点位
   const loadTags = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchTags(selectedNode || undefined, page, pageSize, search || undefined)
+      const data = await fetchTags(
+        selectedNode || undefined,
+        page,
+        pageSize,
+        search || undefined,
+        dataType || undefined,
+        sortBy,
+        sortOrder,
+      )
       setTags(data.tags)
       setTotal(data.total)
       setTotalPages(data.total_pages || 1)
     } finally {
       setLoading(false)
     }
-  }, [selectedNode, page, search])
+  }, [selectedNode, page, search, dataType, sortBy, sortOrder])
 
   useEffect(() => { loadTags() }, [loadTags])
 
@@ -279,6 +361,36 @@ export default function App() {
 
     return cleanup
   }, [tags])
+
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(column)
+      setSortOrder('asc')
+    }
+  }
+
+  const handleBatchApply = async () => {
+    const scale = batchScale ? parseFloat(batchScale) : undefined
+    const offset = batchOffset ? parseFloat(batchOffset) : undefined
+    if (scale === undefined && offset === undefined) {
+      alert('请至少填写 Scale 或 Offset')
+      return
+    }
+    setBatchSaving(true)
+    try {
+      await batchUpdateTags(Array.from(selectedIds), { scale_factor: scale, value_offset: offset })
+      setSelectedIds(new Set())
+      setBatchScale('')
+      setBatchOffset('')
+      loadTags()
+    } catch {
+      alert('批量更新失败')
+    } finally {
+      setBatchSaving(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#f0f2f5] p-6">
@@ -314,13 +426,28 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-600 whitespace-nowrap">类型:</label>
+            <select
+              value={dataType}
+              onChange={(e) => { setDataType(e.target.value); setPage(1) }}
+              className="neu-input px-3 py-1.5 text-xs bg-transparent min-w-[100px]"
+            >
+              <option value="">全部</option>
+              <option value="FLOAT">FLOAT</option>
+              <option value="INT">INT</option>
+              <option value="BOOL">BOOL</option>
+              <option value="STRING">STRING</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-gray-600 whitespace-nowrap">搜索:</label>
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="点位名 / 显示名..."
-              className="neu-input px-3 py-1.5 text-xs bg-transparent min-w-[180px]"
+              className="neu-input px-3 py-1.5 text-xs bg-transparent min-w-[160px]"
             />
           </div>
 
@@ -363,12 +490,61 @@ export default function App() {
           </div>
         </div>
 
+        {/* 批量编辑面板 */}
+        {selectedIds.size > 0 && (
+          <div className="neu-card p-4 mb-4 flex flex-wrap items-center gap-4 bg-[#52c41a]/5 border border-[#52c41a]/20">
+            <span className="text-xs font-medium text-gray-700">
+              已选 <span className="text-[#389e0d] font-bold">{selectedIds.size}</span> 个点位
+            </span>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-600">Scale:</label>
+              <input
+                type="number"
+                step="any"
+                value={batchScale}
+                onChange={(e) => setBatchScale(e.target.value)}
+                placeholder="统一 Scale"
+                className="neu-input px-2 py-1 text-xs w-24"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-600">Offset:</label>
+              <input
+                type="number"
+                step="any"
+                value={batchOffset}
+                onChange={(e) => setBatchOffset(e.target.value)}
+                placeholder="统一 Offset"
+                className="neu-input px-2 py-1 text-xs w-24"
+              />
+            </div>
+            <button
+              onClick={handleBatchApply}
+              disabled={batchSaving}
+              className="neu-btn px-4 py-1.5 text-xs font-medium text-white bg-[#52c41a] hover:bg-[#389e0d] disabled:opacity-50"
+            >
+              {batchSaving ? '应用中...' : '批量应用'}
+            </button>
+            <button
+              onClick={() => { setSelectedIds(new Set()); setBatchScale(''); setBatchOffset('') }}
+              className="neu-btn px-3 py-1.5 text-xs text-gray-500"
+            >
+              取消选择
+            </button>
+          </div>
+        )}
+
         {/* 点位表格 */}
         <TagsTable
           tags={tags}
           onTagUpdate={loadTags}
           realtimeValues={realtimeValues}
           onShowTrend={setTrendTag}
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
+          sortBy={sortBy}
+          sortOrder={sortOrder}
+          onSort={handleSort}
         />
 
         {/* 趋势图弹窗 */}
