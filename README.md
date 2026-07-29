@@ -99,39 +99,41 @@ cd omnithings
 cp .env.example .env   # 按需修改数据库密码
 ```
 
-### 2. 启动基础设施
+### 2. 一键启动（推荐）
 
 ```bash
-docker compose up -d timescaledb nanomq
+docker compose up -d --build
 ```
 
-### 3. 后端
+访问：
+- `http://localhost:9000` — 前端页面（点位管理 + 实时趋势）
+- `http://localhost:9000/api/docs` — Swagger API 文档
 
+> 首次启动会自动执行 `init-db/*.sql` 初始化数据库。
+
+### 3. 本地开发（可选）
+
+**后端**：
 ```bash
 cd backend
-pip install -e .                       # 安装依赖
+pip install fastapi "uvicorn[standard]" psycopg2-binary paho-mqtt loguru pydantic pydantic-settings pint websockets
 uvicorn app.main:app --reload --port 9000
 ```
 
-打开 `http://localhost:9000/api/docs` 查看 Swagger 文档。
-
-### 4. 前端
-
+**前端**：
 ```bash
 cd frontend
 npm install
 npm run dev    # Vite dev server @5173
 ```
 
-### 5. 全栈 Docker（生产）
+### 4. e606 裁剪内核部署
 
 ```bash
-docker compose up -d
-# TimescaleDB  @5432
-# nanoMQ       @1883
-# FastAPI      @9000
-# Frontend     @3000
+docker compose -f docker-compose.yml -f docker-compose.e606.yml up -d
 ```
+
+> e606 使用 `network_mode: host` + `tmpfs: /dev/mqueue`，端口直接占宿主机。
 
 ---
 
@@ -184,8 +186,9 @@ omnithings/
 │       ├── g7-goal-breakdown.md      # 目标拆解
 │       └── ...
 │
-├── docker-compose.yml     # 四服务编排
-└── .env.example          # 环境变量模板
+├── docker-compose.yml        # 三服务编排 (TimescaleDB + FastAPI + NanoMQ)
+├── docker-compose.e606.yml   # e606 裁剪内核 override
+└── .env.example             # 环境变量模板
 ```
 
 ---

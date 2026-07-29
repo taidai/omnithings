@@ -1,0 +1,39 @@
+# ============================================================
+# OmniThings - e606 内核裁剪版专用 Override
+#
+# 用法: docker compose -f docker-compose.yml -f docker-compose.e606.yml up -d
+#
+# e606 避坑铁律:
+#   1. tmpfs: - /dev/mqueue   (内核无 CONFIG_POSIX_MQUEUE)
+#   2. network_mode: host     (内核无 CONFIG_VETH, bridge 网络残废)
+# ============================================================
+
+services:
+  timescaledb:
+    network_mode: host
+    tmpfs:
+      - /dev/mqueue
+    ports: []  # host 网络下 ports 无效，清空避免警告
+
+  nanomq:
+    network_mode: host
+    tmpfs:
+      - /dev/mqueue
+    ports: []
+
+  backend:
+    network_mode: host
+    tmpfs:
+      - /dev/mqueue
+    ports: []
+    environment:
+      # host 网络下通过 127.0.0.1 直连同宿主服务
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      MQTT_HOST: 127.0.0.1
+      MQTT_PORT: 1883
+      FRONTEND_DIST: /app/frontend/dist
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./frontend/dist:/app/frontend/dist:ro
+      - omnithings-data:/app/data

@@ -1,10 +1,12 @@
 # ============================================================
-# OmniThings Backend - Docker Build (F0 精简版)
+# OmniThings Unified Image - Multi-stage Docker Build
 #
-# 跨平台构建 (本地 Windows → e606 ARM64):
+# Stage 1: Node.js 构建前端 dist
+# Stage 2: Python 后端 + 前端静态文件
+#
+# 构建:
+#   docker build -t omnithings:0.1.0 ./backend
 #   docker buildx build --platform linux/arm64 -t omnithings:0.1.0 ./backend --load
-#   docker save omnithings:0.1.0 | gzip > omnithings-0.1.0-arm.tar.gz
-#   scp → 服务器: docker load < omnithings-0.1.0-arm.tar.gz
 #
 # 说明:
 #   - 基础镜像走 DaoCloud 加速 (docker.io 直连国内 EOF)
@@ -12,10 +14,22 @@
 #   - F0 精简依赖: zen-engine/pandas/sympy/sqlalchemy 等 F1/F2 组件后置
 # ============================================================
 
+# ---- Stage 1: Frontend Build ----
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci --prefer-offline
+
+COPY frontend/ ./
+RUN npm run build
+
+# ---- Stage 2: Backend + Frontend ----
 FROM docker.m.daocloud.io/library/python:3.12-slim
 
 LABEL maintainer="OmniThings Team"
-LABEL description="OmniThings IoT Platform Backend - F0 Data Pipeline"
+LABEL description="OmniThings IoT Platform - Unified Backend + Frontend"
 LABEL version="0.1.0"
 
 WORKDIR /app
@@ -27,7 +41,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # F0 核心依赖 (清华镜像加速)
-# zen-engine/pandas/sympy/sqlmodel/asyncpg/alembic 等 F1/F2 阶段再加
 RUN pip install --no-cache-dir \
         -i https://pypi.tuna.tsinghua.edu.cn/simple \
         fastapi \
@@ -37,10 +50,14 @@ RUN pip install --no-cache-dir \
         loguru \
         pydantic \
         pydantic-settings \
-        pint
+        pint \
+        websockets
 
-# 复制应用代码
-COPY app ./app
+# 复制后端应用代码
+COPY backend/app ./app
+
+# 复制前端构建产物
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # 非 root 运行
 RUN groupadd -r omnithings && useradd -r -g omnithings omnithings && \
