@@ -4,6 +4,8 @@
 >
 > **简单配置即可交付工业控制系统** — 替代 ThingsBoard 的轻量级方案。
 
+**中文** | [English](README_EN.md) | [官网 www.holoems.com](https://www.holoems.com)
+
 ---
 
 ## 这是什么
@@ -77,6 +79,7 @@ Site (场站)
 | **F0 数据管道** | ✅ 已交付 | MQTT→Parser→Normalizer→TSDB 全链路跑通，~10 msg/s 持续入库 |
 | **F0 可视化 V1** | ✅ 已交付 | 点位列表 + 行内编辑 offset/scale + 实时值双列 (raw/eng) + WebSocket 推送 |
 | **Neuron 点位同步** | ✅ 已交付 | `sync_neuron_tags.py` 一键发现节点/分组/标签，自动入库 |
+| **F0 快照黑板** | ✅ 已交付 | 节点级全量 JSONB 快照，时间戳对齐 |
 | **F1 虚拟点位** | 🔨 规划中 | SymPy 公式引擎 + 级联传播 |
 | **F3 节点聚合** | 🔨 规划中 | 5 层树 + 每层汇总值 |
 | **F2 控制规则** | 🔨 规划中 | GoRules JDM + RPC 回写 + 审计日志 |
@@ -147,6 +150,9 @@ omnithings/
 │   │   │   ├── health.py   #   管道健康状态
 │   │   │   ├── nodes.py    #   节点列表
 │   │   │   ├── tags.py     #   点位 CRUD + 行内编辑
+│   │   │   ├── telemetry.py#   原始数据查询
+│   │   │   ├── snapshots.py#   节点快照查询
+│   │   │   ├── admin.py    #   开发者工具
 │   │   │   └── websocket.py#   实时值推送
 │   │   ├── core/           # 配置 (pydantic-settings)
 │   │   ├── db/             # 数据库连接池
@@ -173,7 +179,9 @@ omnithings/
 │
 ├── init-db/
 │   ├── 001-schema.sql     # 建表 + Hypertable + CAGG
-│   └── 002-test-data.sql  # 测试数据
+│   ├── 002-test-data.sql  # 测试数据
+│   ├── 003-real-device-mapping.sql # 真实设备映射
+│   └── 004-node-snapshot.sql # 节点快照表
 │
 ├── config/
 │   └── nanomq.conf        # nanoMQ 配置
@@ -201,6 +209,10 @@ omnithings/
 | GET | `/api/v1/nodes` | 节点列表（含 tag 数量） |
 | GET | `/api/v1/tags?node_id=X&page=1` | 点位分页查询（含 offset/scale） |
 | PUT | `/api/v1/tags/{tag_id}` | 修改 scale / offset / unit |
+| PUT | `/api/v1/tags/batch` | 批量修改 scale / offset |
+| GET | `/api/v1/telemetry` | 原始遥测数据查询 |
+| GET | `/api/v1/snapshots` | 节点快照查询（数据黑板） |
+| POST | `/api/v1/query` | SELECT-only SQL 查询 |
 | WS | `/api/v1/ws/telemetry` | 实时原始值/工程值推送 |
 
 ---
@@ -221,6 +233,9 @@ t_tags(
 
 -- 遥测（TimescaleDB Hypertable）
 t_telemetry(ts, node_id, tag_id, value_int, value_float, value_bool, value_str)
+
+-- 节点快照（数据黑板）
+t_node_snapshot(ts, node_id, data JSONB, raw_data JSONB, raw_message JSONB)
 
 -- 连续聚合（多粒度查询）
 cagg_telemetry_1min, cagg_telemetry_5min, cagg_telemetry_1h
@@ -281,6 +296,12 @@ services:
 详见 [`docs/decisions/`](docs/decisions/) 下的 ADR 决策记录。
 
 ---
+
+## 链接
+
+- **官网**: [www.holoems.com](https://www.holoems.com)
+- **GitHub**: [github.com/taidai/omnithings](https://github.com/taidai/omnithings)
+- **文档**: [docs/](docs/)
 
 ## 开发
 
