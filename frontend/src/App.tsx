@@ -7,7 +7,7 @@ import TrendChart from './components/TrendChart'
 import TelemetryTable from './components/TelemetryTable'
 import AdminPanel from './components/AdminPanel'
 import SnapshotTable from './components/SnapshotTable'
-import NeuronPanel from './components/NeuronPanel'
+import NeuronStatusCard from './components/NeuronStatusCard'
 
 // ── 管道状态条 ──
 function PipelineBar({ health }: { health: HealthStatus | null }) {
@@ -300,7 +300,8 @@ export default function App() {
   const [batchScale, setBatchScale] = useState('')
   const [batchOffset, setBatchOffset] = useState('')
   const [batchSaving, setBatchSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'tags' | 'telemetry' | 'admin' | 'snapshots' | 'neuron'>('tags')
+  const [showNeuronCard, setShowNeuronCard] = useState(false)
+  const [activeTab, setActiveTab] = useState<'tags' | 'snapshots' | 'admin'>('tags')
   const pageSize = 50
 
   // 加载节点列表
@@ -424,14 +425,6 @@ export default function App() {
               节点快照
             </button>
             <button
-              onClick={() => setActiveTab('neuron')}
-              className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                activeTab === 'neuron' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              采集管理
-            </button>
-            <button
               onClick={() => setActiveTab('admin')}
               className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
                 activeTab === 'admin' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -507,6 +500,14 @@ export default function App() {
             导出 CSV
           </button>
 
+          <button
+            onClick={() => setShowNeuronCard(!showNeuronCard)}
+            disabled={!selectedNode}
+            className="neu-btn px-4 py-1.5 text-xs font-medium text-gray-600 hover:text-[#389e0d] disabled:opacity-30"
+          >
+            {showNeuronCard ? '隐藏采集' : '采集配置'}
+          </button>
+
           <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
             <span>共 {total} 个点位</span>
             <div className="flex items-center gap-1">
@@ -530,6 +531,14 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* Neuron 节点状态卡片 */}
+        {showNeuronCard && selectedNode && (
+          <NeuronStatusCard
+            nodeName={nodes.find(n => n.id === selectedNode)?.name || ''}
+            onClose={() => setShowNeuronCard(false)}
+          />
+        )}
 
         {/* 批量编辑面板 */}
         {selectedIds.size > 0 && (
@@ -605,8 +614,6 @@ export default function App() {
           </>
         ) : activeTab === 'snapshots' ? (
           <SnapshotTable />
-        ) : activeTab === 'neuron' ? (
-          <NeuronPanel />
         ) : (
           <AdminPanel />
         )}
