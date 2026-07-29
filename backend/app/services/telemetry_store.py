@@ -25,7 +25,7 @@ from psycopg2 import sql
 from psycopg2.extras import execute_values
 
 from app.core.config import settings
-from app.models.schemas import NormalizedMessage, TelemetryRecord, Quality
+from app.models.schemas import NodeSnapshotRecord, NormalizedMessage, TelemetryRecord, Quality
 
 # ══════════════════════════════════════
 # 连接池
@@ -156,6 +156,58 @@ def insert_normalized_message(
                 point.tag_name,
             )
     return batch_insert_telemetry(records)
+
+
+# ══════════════════════════════════════
+# 节点快照写入 (数据黑板)
+# ══════════════════════════════════════
+
+_SNAPSHOT_INSERT_SQL = """
+INSERT INTO t_node_snapshot (ts, node_id, node_name, data, raw_data, raw_message, quality)
+VALUES %s
+ON CONFLICT (ts, node_id) DO UPDATE SET
+    data = EXCLUDED.data,
+    raw_data = EXCLUDED.raw_data,
+    raw_message = EXCLUDED.raw_message,
+    quality = EXCLUDED.quality;
+"""
+
+
+async def batch_insert_snapshots(
+    records: list[NodeSnapshotRecord],
+) -> int:
+    """
+    批量写入节点快照到 t_node_snapshot (数据黑板)。
+
+    Args:
+        records: NodeSnapshotRecord 列表
+
+    Returns:
+        成功写入的行数
+    """
+    if not records:
+        return 0
+
+    rows = []
+    for r in records:
+        rows.append((
+            r.ts,
+            r.node_id,
+            r.node_name,
+            psycopg2.extras.Json(r.data),
+            psycopg2.extras.Json(r.raw_data),
+            psycopg2.extras.Json(r.raw_message),
+            r.quality or Quality.GOOD.value,
+        ))
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            execute_values(cur, _SNAPSHOT_INSERT_SQL, rows)
+            conn.commit()
+            inserted = cur.rowcount
+
+    logger.debug("[TSDB] Batch insert {} snapshots", inserted)
+    return inserted
 
 
 # ══════════════════════════════════════

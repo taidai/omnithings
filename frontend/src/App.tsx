@@ -6,6 +6,7 @@ import {
 import TrendChart from './components/TrendChart'
 import TelemetryTable from './components/TelemetryTable'
 import AdminPanel from './components/AdminPanel'
+import SnapshotTable from './components/SnapshotTable'
 
 // ── 管道状态条 ──
 function PipelineBar({ health }: { health: HealthStatus | null }) {
@@ -298,7 +299,7 @@ export default function App() {
   const [batchScale, setBatchScale] = useState('')
   const [batchOffset, setBatchOffset] = useState('')
   const [batchSaving, setBatchSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'tags' | 'telemetry' | 'admin'>('tags')
+  const [activeTab, setActiveTab] = useState<'tags' | 'telemetry' | 'admin' | 'snapshots'>('tags')
   const pageSize = 50
 
   // 加载节点列表
@@ -420,6 +421,14 @@ export default function App() {
               }`}
             >
               数据表查询
+            </button>
+            <button
+              onClick={() => setActiveTab('snapshots')}
+              className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                activeTab === 'snapshots' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              节点快照
             </button>
             <button
               onClick={() => setActiveTab('admin')}
@@ -595,6 +604,8 @@ export default function App() {
           </>
         ) : activeTab === 'telemetry' ? (
           <TelemetryTable />
+        ) : activeTab === 'snapshots' ? (
+          <SnapshotTable />
         ) : (
           <AdminPanel />
         )}

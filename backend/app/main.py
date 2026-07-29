@@ -105,6 +105,9 @@ def create_app() -> FastAPI:
     from app.api.admin import router as admin_router
     app.include_router(admin_router, prefix="/api/v1", tags=["Admin"])
 
+    from app.api.snapshots import router as snapshots_router
+    app.include_router(snapshots_router, prefix="/api/v1", tags=["Snapshots"])
+
     # ---- Static Frontend (F0 可视化 V1) ----
     # 后端直接托管前端 dist，无需独立 nginx 容器
     import os

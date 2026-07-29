@@ -35,7 +35,7 @@ from app.models.schemas import (
 from app.services.mqtt_client import MqttClient
 from app.services.normalizer import TagNormalizationRule, normalize
 from app.services.parser import parse_neuron_json
-from app.services.telemetry_store import batch_insert_telemetry, TelemetryRecord
+from app.services.telemetry_store import batch_insert_snapshots, batch_insert_telemetry, TelemetryRecord
 
 
 class DataPipeline:
@@ -62,8 +62,13 @@ class DataPipeline:
 
         # ---- 批量写入缓冲 ----
         self._buffer: list[TelemetryRecord] = []
+        self._snapshot_buffer: list[NodeSnapshotRecord] = []
         self._buffer_lock = asyncio.Lock()
         self._flush_task: asyncio.Task | None = None
+
+        # ---- 节点状态缓存 (全量快照) ----
+        # {node_name: {tag_name: (eng_value, raw_value)}}
+        self._node_state: dict[str, dict[str, tuple[float | int | bool | str | None, float | int | bool | str | None]]] = {}
 
     # ══════════════════════════════
     # 生命周期
@@ -166,9 +171,11 @@ class DataPipeline:
 
         # ── Hook 3: 持久化 (缓冲写入) (~30 行) ──
         records = self._to_records(normalized)
+        snapshot = self._to_snapshot(normalized, parsed)
         should_flush = False
         async with self._buffer_lock:
             self._buffer.extend(records)
+            self._snapshot_buffer.append(snapshot)
             should_flush = len(self._buffer) >= settings.pipeline_batch_size
 
         if should_flush:
@@ -231,6 +238,50 @@ class DataPipeline:
                 )
         return records
 
+    def _to_snapshot(self, msg: NormalizedMessage, parsed: ParsedMessage) -> NodeSnapshotRecord:
+        """
+        NormalizedMessage → NodeSnapshotRecord (数据黑板)。
+
+        时间戳对齐: 使用 parsed.timestamp (Neuron 原始时间戳)。
+        全量快照: 合并节点状态缓存，生成包含所有点位的完整快照。
+        """
+        from app.models.schemas import NodeSnapshotRecord
+
+        node_name = msg.source_node
+        node_id = self._node_id_map.get(node_name)
+        if node_id is None:
+            # 未知节点，使用零 UUID (会在 DB 层被拒绝，仅作占位)
+            node_id = UUID(int=0)
+
+        # 初始化节点状态缓存
+        if node_name not in self._node_state:
+            self._node_state[node_name] = {}
+
+        state = self._node_state[node_name]
+
+        # 更新缓存: 新值覆盖旧值
+        for point in msg.points:
+            raw_val = parsed.tags.get(point.tag_name)
+            state[point.tag_name] = (point.value, raw_val)
+
+        # 生成全量快照 (从缓存读取所有点位)
+        data: dict[str, float | int | bool | str | None] = {}
+        raw_data: dict[str, float | int | bool | str | None] = {}
+
+        for tag_name, (eng_val, raw_val) in state.items():
+            data[tag_name] = eng_val
+            raw_data[tag_name] = raw_val
+
+        return NodeSnapshotRecord(
+            ts=msg.ts,
+            node_id=node_id,
+            node_name=node_name,
+            data=data,
+            raw_data=raw_data,
+            raw_message=parsed.model_dump(),
+            quality=192,
+        )
+
     async def _load_tag_rules(self) -> None:
         """从 t_tags 表加载归一化规则和 ID 映射。"""
         try:
@@ -288,22 +339,28 @@ class DataPipeline:
         """定时 flush 缓冲区到 DB。"""
         while True:
             await asyncio.sleep(settings.pipeline_flush_interval_sec)
-            if self._buffer:
+            if self._buffer or self._snapshot_buffer:
                 await self._do_flush()
 
     async def _do_flush(self) -> None:
-        """执行实际写入。"""
-        if not self._buffer:
+        """执行实际写入 (t_telemetry + t_node_snapshot)。"""
+        if not self._buffer and not self._snapshot_buffer:
             return
         async with self._buffer_lock:
             batch = self._buffer[:]
             self._buffer.clear()
+            snapshot_batch = self._snapshot_buffer[:]
+            self._snapshot_buffer.clear()
         try:
-            count = await batch_insert_telemetry(batch)
-            self.metrics.points_written_db += count
+            if batch:
+                count = await batch_insert_telemetry(batch)
+                self.metrics.points_written_db += count
+            if snapshot_batch:
+                await batch_insert_snapshots(snapshot_batch)
         except Exception as e:
             self.metrics.db_write_errors += 1
-            logger.error("[Pipeline] DB write error ({} records): {}", len(batch), e)
+            logger.error("[Pipeline] DB write error ({} records, {} snapshots): {}",
+                        len(batch), len(snapshot_batch), e)
 
     @property
     def uptime_seconds(self) -> float:
