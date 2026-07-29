@@ -73,11 +73,30 @@ export async function fetchNodes(): Promise<Node[]> {
   return data.nodes || []
 }
 
-export async function fetchTags(nodeId?: string, page = 1, pageSize = 200): Promise<{ tags: Tag[]; total: number }> {
+export async function fetchTags(
+  nodeId?: string,
+  page = 1,
+  pageSize = 50,
+  search?: string,
+): Promise<{ tags: Tag[]; total: number; page: number; page_size: number; total_pages: number }> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   if (nodeId) params.set('node_id', nodeId)
+  if (search) params.set('search', search)
   const res = await fetch(`${API_BASE}/tags?${params}`)
   return res.json()
+}
+
+export function exportTagsCsv(nodeId?: string, search?: string): void {
+  const params = new URLSearchParams()
+  if (nodeId) params.set('node_id', nodeId)
+  if (search) params.set('search', search)
+  const url = `${API_BASE}/tags/export?${params}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 export async function updateTag(tagId: string, updates: Partial<Pick<Tag, 'scale_factor' | 'value_offset' | 'unit' | 'display_name'>>): Promise<any> {
@@ -92,6 +111,26 @@ export async function updateTag(tagId: string, updates: Partial<Pick<Tag, 'scale
 
 export async function fetchHealth(): Promise<HealthStatus> {
   const res = await fetch(`${API_BASE}/health`)
+  return res.json()
+}
+
+export interface HistoryPoint {
+  ts: string
+  raw_value: number | null
+  eng_value: number | null
+}
+
+export interface HistoryResponse {
+  tag_id: string
+  tag_name: string
+  range: string
+  bucket: string
+  points: HistoryPoint[]
+}
+
+export async function fetchTagHistory(tagId: string, range: '1h' | '24h' | '7d'): Promise<HistoryResponse> {
+  const res = await fetch(`${API_BASE}/tags/${tagId}/history?range=${range}`)
+  if (!res.ok) throw new Error(`History fetch failed: ${res.status}`)
   return res.json()
 }
 

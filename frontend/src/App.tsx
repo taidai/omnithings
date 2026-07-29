@@ -1,14 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import {
-  fetchNodes, fetchTags, fetchHealth, updateTag, connectTelemetryWS,
+  fetchNodes, fetchTags, fetchHealth, updateTag, connectTelemetryWS, exportTagsCsv,
   type Node, type Tag, type HealthStatus, type TelemetryUpdate,
 } from './api/client'
+import TrendChart from './components/TrendChart'
 
 // ── 管道状态条 ──
 function PipelineBar({ health }: { health: HealthStatus | null }) {
   if (!health) return null
   const p = health.pipeline
-  const isOk = p.status === 'running' && health.components.mqtt.status === 'connected'
+  const isOk = p.status.toLowerCase() === 'running' && health.components.mqtt.status === 'connected'
 
   return (
     <div className="neu-card px-4 py-2 mb-4 flex items-center gap-6 text-xs">
@@ -106,10 +107,11 @@ function EditableCell({
 }
 
 // ── 主表格组件 ──
-function TagsTable({ tags, onTagUpdate, realtimeValues }: {
+function TagsTable({ tags, onTagUpdate, realtimeValues, onShowTrend }: {
   tags: Tag[]
   onTagUpdate: () => void
   realtimeValues: Map<string, TelemetryUpdate>
+  onShowTrend: (tag: Tag) => void
 }) {
   const handleUpdateOffset = async (tagId: string, newOffset: number) => {
     await updateTag(tagId, { value_offset: newOffset })
@@ -148,10 +150,14 @@ function TagsTable({ tags, onTagUpdate, realtimeValues }: {
                 <tr key={tag.id} className="border-b border-gray-100 hover:bg-white/30">
                   <td className="px-3 py-2 text-gray-600">{tag.node_name}</td>
                   <td className="px-3 py-2">
-                    <div>
-                      <div className="font-medium text-gray-800">{tag.display_name || tag.name}</div>
+                    <button
+                      onClick={() => onShowTrend(tag)}
+                      className="text-left hover:text-[#389e0d] transition-colors"
+                      title="点击查看趋势"
+                    >
+                      <div className="font-medium text-gray-800 underline decoration-dotted underline-offset-2 decoration-gray-300 hover:decoration-[#52c41a]">{tag.display_name || tag.name}</div>
                       <div className="text-gray-400 text-[11px]">{tag.name}</div>
-                    </div>
+                    </button>
                   </td>
                   <td className="px-3 py-2">
                     <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
@@ -211,6 +217,12 @@ export default function App() {
   const [health, setHealth] = useState<HealthStatus | null>(null)
   const [realtimeValues, setRealtimeValues] = useState<Map<string, TelemetryUpdate>>(new Map())
   const [loading, setLoading] = useState(false)
+  const [trendTag, setTrendTag] = useState<Tag | null>(null)
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const pageSize = 50
 
   // 加载节点列表
   useEffect(() => {
@@ -227,16 +239,26 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
+  // 搜索防抖
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
   // 加载点位
   const loadTags = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchTags(selectedNode || undefined)
+      const data = await fetchTags(selectedNode || undefined, page, pageSize, search || undefined)
       setTags(data.tags)
+      setTotal(data.total)
+      setTotalPages(data.total_pages || 1)
     } finally {
       setLoading(false)
     }
-  }, [selectedNode])
+  }, [selectedNode, page, search])
 
   useEffect(() => { loadTags() }, [loadTags])
 
@@ -274,20 +296,33 @@ export default function App() {
         <PipelineBar health={health} />
 
         {/* 工具栏 */}
-        <div className="neu-card p-4 mb-4 flex items-center gap-4">
-          <label className="text-xs font-medium text-gray-600">节点筛选:</label>
-          <select
-            value={selectedNode}
-            onChange={(e) => setSelectedNode(e.target.value)}
-            className="neu-input px-3 py-1.5 text-xs bg-transparent min-w-[200px]"
-          >
-            <option value="">全部节点 ({tags.length} 个点位)</option>
-            {nodes.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.name} ({n.tag_count} tags)
-              </option>
-            ))}
-          </select>
+        <div className="neu-card p-4 mb-4 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-600 whitespace-nowrap">节点:</label>
+            <select
+              value={selectedNode}
+              onChange={(e) => { setSelectedNode(e.target.value); setPage(1) }}
+              className="neu-input px-3 py-1.5 text-xs bg-transparent min-w-[160px]"
+            >
+              <option value="">全部节点</option>
+              {nodes.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name} ({n.tag_count})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-600 whitespace-nowrap">搜索:</label>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="点位名 / 显示名..."
+              className="neu-input px-3 py-1.5 text-xs bg-transparent min-w-[180px]"
+            />
+          </div>
 
           <button
             onClick={loadTags}
@@ -297,8 +332,34 @@ export default function App() {
             {loading ? '加载中...' : '刷新'}
           </button>
 
-          <div className="ml-auto text-xs text-gray-500">
-            共 {tags.length} 个点位
+          <button
+            onClick={() => exportTagsCsv(selectedNode || undefined, search || undefined)}
+            className="neu-btn px-4 py-1.5 text-xs font-medium text-gray-600 hover:text-[#389e0d]"
+          >
+            导出 CSV
+          </button>
+
+          <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
+            <span>共 {total} 个点位</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+                className="neu-btn w-7 h-7 flex items-center justify-center disabled:opacity-30"
+              >
+                ‹
+              </button>
+              <span className="px-2 font-mono">
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                className="neu-btn w-7 h-7 flex items-center justify-center disabled:opacity-30"
+              >
+                ›
+              </button>
+            </div>
           </div>
         </div>
 
@@ -307,7 +368,18 @@ export default function App() {
           tags={tags}
           onTagUpdate={loadTags}
           realtimeValues={realtimeValues}
+          onShowTrend={setTrendTag}
         />
+
+        {/* 趋势图弹窗 */}
+        {trendTag && (
+          <TrendChart
+            tagId={trendTag.id}
+            tagName={trendTag.display_name || trendTag.name}
+            unit={trendTag.unit}
+            onClose={() => setTrendTag(null)}
+          />
+        )}
 
         {/* 底部信息 */}
         <div className="mt-4 text-center text-[11px] text-gray-400">

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -77,6 +78,7 @@ class HistoryResponse(BaseModel):
 async def list_tags(
     node_id: str | None = Query(None, description="按节点过滤"),
     data_type: str | None = Query(None, description="按数据类型过滤"),
+    search: str | None = Query(None, description="按名称/显示名模糊搜索"),
     enabled: bool = Query(True, description="只看启用点位"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(50, ge=1, le=200, description="每页条数"),
@@ -97,6 +99,9 @@ async def list_tags(
     if data_type:
         conditions.append("t.data_type = %s")
         params.append(data_type.upper())
+    if search:
+        conditions.append("(t.name ILIKE %s OR t.display_name ILIKE %s)")
+        params.extend([f"%{search}%", f"%{search}%"])
 
     where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -167,6 +172,103 @@ async def list_tags(
     except Exception as e:
         logger.error("[API/tags] Query failed: {}", e)
         return {"tags": [], "total": 0, "page": page, "page_size": page_size, "error": str(e)}
+
+
+@router.get("/tags/export")
+async def export_tags_csv(
+    node_id: str | None = Query(None, description="按节点过滤"),
+    data_type: str | None = Query(None, description="按数据类型过滤"),
+    search: str | None = Query(None, description="按名称/显示名模糊搜索"),
+) -> StreamingResponse:
+    """
+    导出点位列表为 CSV（含最新值）。
+    支持当前筛选条件，最多导出 5000 条。
+    """
+    import csv
+    import io
+
+    from app.services.telemetry_store import get_connection
+
+    conditions = ["t.enabled = TRUE"]
+    params: list = []
+
+    if node_id:
+        conditions.append("t.node_id = %s")
+        params.append(UUID(node_id))
+    if data_type:
+        conditions.append("t.data_type = %s")
+        params.append(data_type.upper())
+    if search:
+        conditions.append("(t.name ILIKE %s OR t.display_name ILIKE %s)")
+        params.extend([f"%{search}%", f"%{search}%"])
+
+    where = " WHERE " + " AND ".join(conditions)
+
+    query = f"""
+    SELECT
+        n.name AS node_name,
+        t.name,
+        t.display_name,
+        t.data_type,
+        t.unit,
+        t.scale_factor,
+        t.value_offset,
+        latest.value AS raw_value,
+        CASE
+            WHEN latest.value IS NULL THEN NULL
+            WHEN t.scale_factor = 1.0 AND t.value_offset = 0.0
+                THEN latest.value::float
+            ELSE (latest.value + t.value_offset) * t.scale_factor
+        END AS eng_value,
+        latest.ts AS latest_ts
+    FROM t_tags t
+    JOIN t_nodes n ON n.id = t.node_id
+    LEFT JOIN LATERAL (
+        SELECT ts, COALESCE(value_float, value_int::float) AS value
+        FROM t_telemetry
+        WHERE tag_id = t.id
+        ORDER BY ts DESC
+        LIMIT 1
+    ) latest ON TRUE
+    {where}
+    ORDER BY n.sort_order, t.sort_order, t.name
+    LIMIT 5000
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            rows = cur.fetchall()
+
+    # 生成 CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "节点", "点位名", "显示名", "数据类型", "单位",
+        "原始值", "工程值", "Scale", "Offset", "最新时间"
+    ])
+    for row in rows:
+        node_name, name, display_name, data_type, unit, scale, offset, raw, eng, ts = row
+        writer.writerow([
+            node_name,
+            name,
+            display_name or "",
+            data_type,
+            unit or "",
+            f"{raw:.4f}" if raw is not None else "",
+            f"{eng:.4f}" if eng is not None else "",
+            f"{scale:.6f}",
+            f"{offset:.6f}",
+            ts.isoformat() if ts else "",
+        ])
+
+    output.seek(0)
+    filename = f"omnithings_tags_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/tags/{tag_id}")
