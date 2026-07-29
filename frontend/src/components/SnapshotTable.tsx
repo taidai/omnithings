@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import {
   fetchNodes, fetchSnapshots, exportSnapshotsCsv,
   type Node, type SnapshotPoint,
@@ -142,7 +142,7 @@ export default function SnapshotTable() {
                 const key = `${s.node_id}-${s.ts}`
                 const isExpanded = expandedRows.has(key)
                 return (
-                  <>
+                  <React.Fragment key={key}>
                     <tr
                       key={key}
                       className="border-b border-gray-100 hover:bg-white/30 cursor-pointer"
@@ -188,7 +188,7 @@ export default function SnapshotTable() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 )
               })}
               {snapshots.length === 0 && !loading && (
