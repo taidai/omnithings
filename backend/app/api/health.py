@@ -88,7 +88,7 @@ async def health_check() -> dict:
             "normalization": {
                 "status": "ok" if m.points_normalized > 0 else "warning",
                 "points_normalized": m.points_normalized,
-                "unmatched_rules": len(_pipeline._rules) - m.points_normalized if hasattr(_pipeline, '_rules') else 0,
+                "unmatched_rules": max(0, m.messages_received - m.points_normalized),
             },
             "db_write": {
                 "status": "ok" if db_err == 0 else "error",

@@ -152,7 +152,9 @@ async def list_tags(
         LIMIT 1
     ) latest ON TRUE
     {where}
-    ORDER BY {order_by} {order_dir}, t.sort_order, t.name
+    ORDER BY
+        CASE WHEN latest.ts IS NOT NULL THEN 0 ELSE 1 END,
+        {order_by} {order_dir}, t.sort_order, t.name
     LIMIT %s OFFSET %s
     """
 
