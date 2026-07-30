@@ -51,6 +51,7 @@ class MqttClient:
 
     async def start(self) -> None:
         """建立 MQTT 连接并订阅。阻塞直到连接成功或失败。"""
+        global _global_client
         # 保存主事件循环引用 — 回调需要用它调度协程
         self._loop = asyncio.get_running_loop()
 
@@ -80,9 +81,11 @@ class MqttClient:
             raise RuntimeError(f"MQTT connect timeout to {host}:{port}")
 
         logger.info("[MQTT] Connected and subscribed to {}", settings.mqtt_telemetry_topic)
+        _global_client = self
 
     async def stop(self) -> None:
         """优雅断开。"""
+        global _global_client
         with self._lock:
             self._stopped = True
             if self._client is not None:
@@ -91,6 +94,17 @@ class MqttClient:
                 self._client.loop_stop()
                 self._client = None
             self._connected.clear()
+            _global_client = None
+
+    def publish(self, topic: str, payload: str | bytes, qos: int = 1, timeout: float = 5.0) -> None:
+        """发布 MQTT 消息。可在任意线程调用。"""
+        with self._lock:
+            if self._client is None or not self._connected.is_set():
+                raise RuntimeError("MQTT client not connected")
+            if isinstance(payload, str):
+                payload = payload.encode("utf-8")
+            info = self._client.publish(topic, payload, qos=qos)
+            info.wait_for_publish(timeout=timeout)
 
     # ══════════════════════════════
     # paho-mqtt 回调
@@ -132,3 +146,12 @@ class MqttClient:
             logger.debug("[MQTT] Loop closed, dropping message: {}", e)
         except Exception as e:
             logger.error("[MQTT] Error dispatching message: {}", e)
+
+
+# 全局 MQTT 客户端引用，供 RPC / F2 控制回写使用
+_global_client: MqttClient | None = None
+
+
+def get_mqtt_client() -> MqttClient | None:
+    """返回当前已连接的全局 MQTT 客户端（若存在）。"""
+    return _global_client

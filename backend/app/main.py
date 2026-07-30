@@ -32,6 +32,8 @@ _scheduler = None
 AGGREGATION_INTERVAL_SEC = 10
 # F1 公式 tick 间隔 (秒)，比聚合更频繁，保证虚拟点先产出
 FORMULA_INTERVAL_SEC = 5
+# F2 规则 tick 间隔 (秒)
+RULE_INTERVAL_SEC = 10
 
 
 @asynccontextmanager
@@ -103,6 +105,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.error("[Main] F1 formula scheduler failed to start (non-fatal): {}", e)
 
+        # Phase 2 S7: 启动 F2 规则调度器 (告警/控制/联动)
+        try:
+            from app.services.rule_engine import run_rule_tick
+
+            async def _rule_job() -> None:
+                await asyncio.to_thread(run_rule_tick)
+
+            _scheduler.add_job(
+                _rule_job,
+                "interval",
+                seconds=RULE_INTERVAL_SEC,
+                id="f2_rules",
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=300,
+            )
+            logger.success("[Main] F2 rule scheduler started ({}s) ✅", RULE_INTERVAL_SEC)
+        except Exception as e:
+            logger.error("[Main] F2 rule scheduler failed to start (non-fatal): {}", e)
+
         _scheduler.start()
         logger.success("[Main] F3 aggregation scheduler started ({}s) ✅", AGGREGATION_INTERVAL_SEC)
     except Exception as e:
@@ -173,6 +195,15 @@ def create_app() -> FastAPI:
     from app.api.categories import router as categories_router
     app.include_router(categories_router, prefix="/api/v1", tags=["Categories"])
 
+    # ---- F2 控制域 ----
+    from app.api import rules as rules_router
+    from app.api import alarms as alarms_router
+    from app.api import rpc as rpc_router
+
+    app.include_router(rules_router.router, prefix="/api/v1", tags=["F2 Rules"])
+    app.include_router(alarms_router.router, prefix="/api/v1", tags=["F2 Alarms"])
+    app.include_router(rpc_router.router, prefix="/api/v1", tags=["F2 RPC"])
+
     # ---- Static Frontend (F0 可视化 V1) ----
     # 后端直接托管前端 dist，无需独立 nginx 容器
     import os
@@ -215,9 +246,6 @@ def create_app() -> FastAPI:
 
     # TODO Phase 1 S4: app.include_router(telemetry_router, prefix="/api/v1")
     # TODO Phase 2:     app.include_router(virtual_points_router, prefix="/api/v1")
-    # TODO Phase 3:     app.include_router(rpc_router, prefix="/api/v1")
-    # TODO Phase 3:     app.include_router(rules_router, prefix="/api/v1")
-    # TODO Phase 3:     app.include_router(alarms_router, prefix="/api/v1")
 
     return app
 
