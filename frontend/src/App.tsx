@@ -406,7 +406,6 @@ export default function App() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl font-bold text-gray-800">OmniThings F0</h1>
-            <p className="text-xs text-gray-500 mt-0.5">Neuron → NanoMQ → FastAPI → TimescaleDB</p>
           </div>
           <div className="flex items-center gap-2">
             <button
