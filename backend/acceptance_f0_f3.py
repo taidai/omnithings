@@ -46,7 +46,7 @@ def db(query, params=None):
     return rows
 
 print('='*60)
-print('OmniThings F0 + F3 Acceptance on e606')
+print('OmniThings F0 + F1 + F3 Acceptance on e606')
 print('='*60)
 
 # ---------- F0: Health + pipeline metrics ----------
@@ -92,9 +92,11 @@ if status == 200:
 else:
     check('health after publish', False, f'{status}: {health}')
 
+meter_p_act_id = None
 status, tags = http('GET', '/tags?node_id=44444444-4444-4444-4444-444444444444&limit=10')
 if status == 200:
     mp = next((t for t in tags.get('tags', []) if t['name'] == 'meter_p_act'), None)
+    meter_p_act_id = mp.get('id') if mp else None
     check('meter_p_act has latest value', mp is not None and mp.get('eng_value') == 12.5, mp)
 else:
     check('tags API', False, f'{status}: {tags}')
@@ -186,6 +188,104 @@ finally:
     if tag_id:
         print('  cleaning up test tag...')
         http('DELETE', f'/tags/{tag_id}')
+
+# ---------- F1: SymPy expression + condition ----------
+print('\n--- F1.1 SymPy expression logical tag ---')
+expr_tag_id = None
+condition_tag_id = None
+try:
+    if not (bms_current_id and meter_p_act_id):
+        check('sources for expression', False, 'bms_current or meter_p_act missing')
+    else:
+        expr_name = f'_accept_expr_power_{int(time.time())}'
+        expr_body = {
+            'node_id': '33333333-3333-3333-3333-333333333333',
+            'name': expr_name,
+            'display_name': '验收功率合成',
+            'unit': 'kW',
+            'tag_type': 'LOGICAL',
+            'data_type': 'FLOAT',
+            'formula_type': 'expression',
+            'formula': 's0 + s1',
+            'sources': [bms_current_id, meter_p_act_id],
+        }
+        status, created = http('POST', '/tags', expr_body)
+        check('created expression logical tag', status in (200, 201), f'{status}: {created}')
+
+        if status in (200, 201):
+            expr_tag_id = created.get('id')
+            expected_expr = -1435.0 + 12.5
+            print(f'  expr_tag_id={expr_tag_id}, expected={expected_expr}')
+            print(f'  polling /tags/{expr_tag_id} for up to {AGG_POLL_MAX}s...')
+            actual = None
+            for i in range(0, AGG_POLL_MAX, AGG_POLL_INTERVAL):
+                time.sleep(AGG_POLL_INTERVAL)
+                status, latest = http('GET', f'/tags/{expr_tag_id}')
+                if status == 200 and latest.get('eng_value') is not None:
+                    actual = latest.get('eng_value')
+                    print(f'  [{i+AGG_POLL_INTERVAL}s] eng_value={actual}')
+                    break
+                print(f'  [{i+AGG_POLL_INTERVAL}s] no value yet (status={status})')
+            close_to('expression value matches expected', actual, expected_expr)
+
+            rows = db(
+                'SELECT is_virtual, value_float FROM t_telemetry WHERE tag_id = %s ORDER BY ts DESC LIMIT 1',
+                (expr_tag_id,)
+            )
+            check('expression virtual row in t_telemetry', bool(rows) and rows[0][0] is True, rows)
+
+            latest_rows = db(
+                'SELECT is_virtual, value_float FROM t_telemetry_latest WHERE tag_id = %s',
+                (expr_tag_id,)
+            )
+            check('expression virtual row in t_telemetry_latest', bool(latest_rows) and latest_rows[0][0] is True, latest_rows)
+
+    print('\n--- F1.2 Condition logical tag ---')
+    if not bms_current_id:
+        check('source for condition', False, 'bms_current missing')
+    else:
+        cond_name = f'_accept_condition_{int(time.time())}'
+        cond_body = {
+            'node_id': '33333333-3333-3333-3333-333333333333',
+            'name': cond_name,
+            'display_name': '验收电流告警',
+            'unit': '',
+            'tag_type': 'LOGICAL',
+            'data_type': 'BOOL',
+            'formula_type': 'condition',
+            'formula': 's0 > -1000',
+            'sources': [bms_current_id],
+        }
+        status, created = http('POST', '/tags', cond_body)
+        check('created condition logical tag', status in (200, 201), f'{status}: {created}')
+
+        if status in (200, 201):
+            condition_tag_id = created.get('id')
+            print(f'  condition_tag_id={condition_tag_id}, expected=False (s0=-1435 > -1000 is false)')
+            print(f'  polling /tags/{condition_tag_id} for up to {AGG_POLL_MAX}s...')
+            actual_bool = None
+            for i in range(0, AGG_POLL_MAX, AGG_POLL_INTERVAL):
+                time.sleep(AGG_POLL_INTERVAL)
+                status, latest = http('GET', f'/tags/{condition_tag_id}')
+                if status == 200 and latest.get('raw_value') is not None:
+                    actual_bool = latest.get('raw_value')
+                    print(f'  [{i+AGG_POLL_INTERVAL}s] raw_value={actual_bool}')
+                    break
+                print(f'  [{i+AGG_POLL_INTERVAL}s] no value yet (status={status})')
+            check('condition value matches expected FALSE', actual_bool is False, f'actual={actual_bool}')
+
+            rows = db(
+                'SELECT is_virtual, value_bool FROM t_telemetry WHERE tag_id = %s ORDER BY ts DESC LIMIT 1',
+                (condition_tag_id,)
+            )
+            check('condition virtual row in t_telemetry', bool(rows) and rows[0][0] is True and rows[0][1] is False, rows)
+finally:
+    if expr_tag_id:
+        print('  cleaning up expression tag...')
+        http('DELETE', f'/tags/{expr_tag_id}')
+    if condition_tag_id:
+        print('  cleaning up condition tag...')
+        http('DELETE', f'/tags/{condition_tag_id}')
 
 print('\n' + '='*60)
 print(f'RESULT: {PASS} passed, {FAIL} failed')

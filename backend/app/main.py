@@ -30,6 +30,8 @@ _pipeline = None
 _scheduler = None
 # 聚合 tick 间隔 (秒)
 AGGREGATION_INTERVAL_SEC = 10
+# F1 公式 tick 间隔 (秒)，比聚合更频繁，保证虚拟点先产出
+FORMULA_INTERVAL_SEC = 5
 
 
 @asynccontextmanager
@@ -80,6 +82,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             max_instances=1,        # 禁止并发重入
             misfire_grace_time=300,
         )
+
+        # Phase 2 S6: 启动 F1 公式调度器 (SymPy expression / condition)
+        try:
+            from app.services.formula_engine import run_formula_tick
+
+            async def _formula_job() -> None:
+                await asyncio.to_thread(run_formula_tick)
+
+            _scheduler.add_job(
+                _formula_job,
+                "interval",
+                seconds=FORMULA_INTERVAL_SEC,
+                id="f1_formula",
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=300,
+            )
+            logger.success("[Main] F1 formula scheduler started ({}s) ✅", FORMULA_INTERVAL_SEC)
+        except Exception as e:
+            logger.error("[Main] F1 formula scheduler failed to start (non-fatal): {}", e)
+
         _scheduler.start()
         logger.success("[Main] F3 aggregation scheduler started ({}s) ✅", AGGREGATION_INTERVAL_SEC)
     except Exception as e:

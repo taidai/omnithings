@@ -84,6 +84,43 @@ class HistoryResponse(BaseModel):
     points: list[HistoryPoint]
 
 
+
+
+def _coerce_latest_value(tag: dict) -> None:
+    """
+    将 t_telemetry_latest 的 value_* 列转换为 API 层的 raw_value / eng_value。
+
+    数据库层已存储工程值（归一化后），因此 raw_value = eng_value（数值类型）。
+    BOOL/STRING 类型只返回 raw_value，eng_value 为 None。
+    """
+    data_type = tag.get("data_type")
+    if data_type == "BOOL":
+        raw = tag.pop("value_bool", None)
+        tag["raw_value"] = raw
+        tag["eng_value"] = None
+    elif data_type == "STRING":
+        raw = tag.pop("value_str", None)
+        tag["raw_value"] = raw
+        tag["eng_value"] = None
+    elif data_type == "INT":
+        raw = tag.pop("value_int", None)
+        tag["raw_value"] = raw
+        try:
+            tag["eng_value"] = round(float(raw), 4) if raw is not None else None
+        except (TypeError, ValueError):
+            tag["eng_value"] = None
+    else:  # FLOAT / 默认
+        raw = tag.pop("value_float", None)
+        tag["raw_value"] = raw
+        try:
+            tag["eng_value"] = round(float(raw), 4) if raw is not None else None
+        except (TypeError, ValueError):
+            tag["eng_value"] = None
+
+    # 清理其他 value_* 列，避免污染响应
+    for k in ("value_float", "value_int", "value_bool", "value_str"):
+        tag.pop(k, None)
+
 # ══════════════════════════════════════
 # Endpoints
 # ══════════════════════════════════════
@@ -128,8 +165,9 @@ async def list_tags(
         "node_name": "n.name",
         "data_type": "t.data_type",
         "unit": "t.unit",
-        "raw_value": "COALESCE(latest.value_float, latest.value_int::float)",
-        "eng_value": "COALESCE(latest.value_float, latest.value_int::float)",
+        # raw_value/eng_value 在 Python 层从 value_* 列构造，不支持 SQL 排序
+        "raw_value": "latest.value_float",
+        "eng_value": "latest.value_float",
         "scale_factor": "t.scale_factor",
         "value_offset": "t.value_offset",
         "sort_order": "t.sort_order",
@@ -146,10 +184,12 @@ async def list_tags(
         t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
         t.read_write, t.enabled, t.description,
         n.name AS node_name,
-        -- 最新值缓存表 (raw = eng, 已归一化)
+        -- 最新值缓存表 (value_* 列由 Python 层按 data_type 转换)
         latest.ts AS latest_ts,
-        latest.value_float AS raw_value,
-        COALESCE(latest.value_float, latest.value_int::float) AS eng_value,
+        latest.value_float,
+        latest.value_int,
+        latest.value_bool,
+        latest.value_str,
         latest.quality
     FROM t_tags t
     JOIN t_nodes n ON n.id = t.node_id
@@ -180,10 +220,7 @@ async def list_tags(
             row["node_id"] = str(row["node_id"])
             if row.get("latest_ts"):
                 row["latest_ts"] = row["latest_ts"].isoformat()
-            if row.get("raw_value") is not None:
-                row["raw_value"] = float(row["raw_value"]) if row["raw_value"] is not None else None
-            if row.get("eng_value") is not None:
-                row["eng_value"] = round(float(row["eng_value"]), 4)
+            _coerce_latest_value(row)
 
         return {
             "tags": rows,
@@ -236,8 +273,10 @@ async def export_tags_csv(
         t.unit,
         t.scale_factor,
         t.value_offset,
-        COALESCE(latest.value_float, latest.value_int::float) AS raw_value,
-        COALESCE(latest.value_float, latest.value_int::float) AS eng_value,
+        latest.value_float,
+        latest.value_int,
+        latest.value_bool,
+        latest.value_str,
         latest.ts AS latest_ts
     FROM t_tags t
     JOIN t_nodes n ON n.id = t.node_id
@@ -260,7 +299,17 @@ async def export_tags_csv(
         "原始值", "工程值", "Scale", "Offset", "最新时间"
     ])
     for row in rows:
-        node_name, name, display_name, data_type, unit, scale, offset, raw, eng, ts = row
+        node_name, name, display_name, data_type, unit, scale, offset, value_float, value_int, value_bool, value_str, ts = row
+        tag = {
+            "data_type": data_type,
+            "value_float": value_float,
+            "value_int": value_int,
+            "value_bool": value_bool,
+            "value_str": value_str,
+        }
+        _coerce_latest_value(tag)
+        raw = tag["raw_value"]
+        eng = tag["eng_value"]
         writer.writerow([
             node_name,
             name,
@@ -296,7 +345,8 @@ async def get_tag(tag_id: UUID) -> dict:
                        t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
                        t.read_write, t.enabled, t.description,
                        n.name AS node_name,
-                       latest.ts, latest.value_float AS raw_value, latest.quality
+                       latest.ts, latest.value_float, latest.value_int,
+                       latest.value_bool, latest.value_str, latest.quality
                 FROM t_tags t
                 JOIN t_nodes n ON n.id = t.node_id
                 LEFT JOIN t_telemetry_latest latest ON latest.tag_id = t.id
@@ -314,9 +364,7 @@ async def get_tag(tag_id: UUID) -> dict:
             tag["node_id"] = str(tag["node_id"])
             if tag.get("ts"):
                 tag["latest_ts"] = tag["ts"].isoformat()
-            if tag.get("raw_value") is not None:
-                tag["raw_value"] = float(tag["raw_value"])
-                tag["eng_value"] = round(tag["raw_value"], 4)
+            _coerce_latest_value(tag)
 
     return tag
 
