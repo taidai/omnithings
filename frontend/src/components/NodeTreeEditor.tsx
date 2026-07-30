@@ -214,8 +214,23 @@ function TagPanel({
 
   if (!node) {
     return (
-      <div className="neu-inset rounded-2xl p-8 flex items-center justify-center h-full min-h-[300px]">
-        <p className="text-xs text-gray-400">← 从左侧节点树选择一个节点查看其挂载点位与实时值</p>
+      <div className="neu-card p-6 h-full flex flex-col items-center justify-center text-center min-h-[360px]">
+        <div className="w-16 h-16 rounded-2xl bg-[#52c41a]/10 flex items-center justify-center mb-4 shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]">
+          <span className="text-3xl">🌲</span>
+        </div>
+        <h3 className="text-sm font-bold text-gray-800 mb-1">选择节点查看详情</h3>
+        <p className="text-xs text-gray-500 max-w-[260px] leading-relaxed mb-5">
+          从左侧节点树点击任意节点，即可查看其挂载点位、实时值、Neuron 设备绑定与汇总规则。
+        </p>
+        <div className="flex items-center gap-2 text-[10px] text-gray-400">
+          <span className="px-2 py-1 rounded-lg bg-white/60">Site</span>
+          <span>→</span>
+          <span className="px-2 py-1 rounded-lg bg-white/60">Station</span>
+          <span>→</span>
+          <span className="px-2 py-1 rounded-lg bg-white/60">EnergyNode</span>
+          <span>→</span>
+          <span className="px-2 py-1 rounded-lg bg-white/60">Device</span>
+        </div>
       </div>
     )
   }
@@ -293,45 +308,68 @@ function TagPanel({
   })
 
   return (
-    <div className="neu-card p-4 h-full">
-      <div className="flex items-start gap-2 mb-3 pb-3 border-b border-gray-100">
-        <span style={{ fontSize: '18px' }}>{meta.icon}</span>
-        <div className="min-w-0">
-          <div className="font-bold text-gray-800 text-sm truncate">{node.name}</div>
-          <div className="text-[10px] text-gray-400 uppercase tracking-wider">
-            {meta.label} · Layer {node.layer}{node.node_type ? ` · ${node.node_type}` : ''}{node.enabled ? '' : ' · 已停用'}
-          </div>
-          {boundDevice && <div className="text-[10px] text-[#13c2c2] mt-0.5">⛓ 已挂载设备：{boundDevice}</div>}
-        </div>
-        <span
-          className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0"
-          style={{ background: `${meta.color}18`, color: meta.color }}
+    <div className="neu-card p-4 h-full flex flex-col">
+      {/* 节点标题栏 */}
+      <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: `${meta.color}15`, boxShadow: 'inset 2px 2px 4px rgba(0,0,0,0.04), inset -2px -2px 4px rgba(255,255,255,0.7)' }}
         >
-          {tags.length} 点位
-        </span>
+          <span style={{ fontSize: '20px' }}>{meta.icon}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="font-bold text-gray-800 text-base truncate">{node.name}</div>
+            <span
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0"
+              style={{ background: `${meta.color}18`, color: meta.color }}
+            >
+              {meta.label}
+            </span>
+            {!node.enabled && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500 shrink-0">已停用</span>
+            )}
+          </div>
+          <div className="text-[10px] text-gray-400 mt-0.5">
+            Layer {node.layer}{node.node_type ? ` · ${node.node_type}` : ''}
+            {boundDevice && <span className="text-[#13c2c2] ml-2">⛓ {boundDevice}</span>}
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-lg font-bold leading-none" style={{ color: meta.color }}>{tags.length}</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">点位</div>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-3 text-xs">
-        <button onClick={() => setRenameOpen((v) => !v)} className="px-2 py-1 rounded-lg bg-white/60 hover:bg-white text-gray-700">重命名</button>
-        <button
-          onClick={() => run(async () => { await updateNode(node.id, { enabled: !node.enabled }); setMsg(node.enabled ? '已停用节点' : '已启用节点'); onNodeChanged({ enabled: !node.enabled }) })}
-          className="px-2 py-1 rounded-lg bg-white/60 hover:bg-white text-gray-700"
-        >
-          {node.enabled ? '停用' : '启用'}
-        </button>
-        <button
-          onClick={() => {
-            if (isRootSite) { setErr('根节点 Site 禁止删除'); return }
-            if (window.confirm(`删除节点「${node.name}」将级联删除其子节点与挂载点位，确认？`)) {
-              run(async () => { await deleteNode(node.id); onNodeDeleted() })
-            }
-          }}
-          className="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600"
-        >
-          删除
-        </button>
-        <button onClick={openMount} className="px-2 py-1 rounded-lg bg-[#13c2c2]/10 hover:bg-[#13c2c2]/20 text-[#08979c]">挂载设备</button>
-        <button onClick={() => setLogicalOpen((v) => !v)} className="px-2 py-1 rounded-lg bg-[#722ed1]/10 hover:bg-[#722ed1]/20 text-[#722ed1]">新增汇总</button>
+      {/* 操作按钮：按功能分组 */}
+      <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
+        <div className="flex items-center gap-1.5">
+          <button onClick={openMount} className="neu-btn px-3 py-1.5 font-medium text-[#08979c] hover:text-[#006d75]">挂载设备</button>
+          <button onClick={() => setLogicalOpen((v) => !v)} className="neu-btn px-3 py-1.5 font-medium text-[#722ed1] hover:text-[#531dab]">新增汇总</button>
+        </div>
+        <div className="w-px h-4 bg-gray-200 mx-1 hidden sm:block" />
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setRenameOpen((v) => !v)} className="neu-btn px-3 py-1.5 text-gray-600 hover:text-gray-800">重命名</button>
+          <button
+            onClick={() => run(async () => { await updateNode(node.id, { enabled: !node.enabled }); setMsg(node.enabled ? '已停用节点' : '已启用节点'); onNodeChanged({ enabled: !node.enabled }) })}
+            className="neu-btn px-3 py-1.5 text-gray-600 hover:text-gray-800"
+          >
+            {node.enabled ? '停用' : '启用'}
+          </button>
+        </div>
+        <div className="ml-auto">
+          <button
+            onClick={() => {
+              if (isRootSite) { setErr('根节点 Site 禁止删除'); return }
+              if (window.confirm(`删除节点「${node.name}」将级联删除其子节点与挂载点位，确认？`)) {
+                run(async () => { await deleteNode(node.id); onNodeDeleted() })
+              }
+            }}
+            className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-xs font-medium"
+          >
+            删除
+          </button>
+        </div>
       </div>
 
       {(msg || err) && (
@@ -422,7 +460,19 @@ function TagPanel({
       {loading ? (
         <div className="text-center py-8 text-xs text-gray-400">加载中...</div>
       ) : tags.length === 0 ? (
-        <div className="text-center py-8 text-xs text-gray-400">该节点未挂载任何点位，可点击「挂载设备」导入 Neuron 点位</div>
+        <div className="flex-1 flex flex-col items-center justify-center text-center py-8 min-h-[220px]">
+          <div className="w-14 h-14 rounded-2xl bg-gray-100/60 flex items-center justify-center mb-3">
+            <span className="text-2xl text-gray-300">📭</span>
+          </div>
+          <div className="text-sm font-medium text-gray-700 mb-1">该节点未挂载点位</div>
+          <div className="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-4">
+            点击「挂载设备」从 Neuron 导入采集点位；或在 Device 层创建「汇总点位」聚合子节点数据。
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={openMount} className="neu-btn px-3 py-1.5 text-xs font-medium text-[#08979c]">挂载设备</button>
+            <button onClick={() => setLogicalOpen((v) => !v)} className="neu-btn px-3 py-1.5 text-xs font-medium text-[#722ed1]">新增汇总</button>
+          </div>
+        </div>
       ) : (
         <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
           <table className="w-full text-xs">
@@ -617,7 +667,7 @@ export default function NodeTreeEditor() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,420px)_1fr] gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,360px)_1fr] gap-4">
       {/* 左：节点树 */}
       <div className="neu-card p-4">
         <div className="flex items-center gap-2 mb-2">
@@ -671,10 +721,10 @@ export default function NodeTreeEditor() {
             <div className="text-center py-8 text-xs text-gray-400">暂无节点树数据，可点击「+ 站点」创建</div>
           )}
         </div>
-        <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-gray-400">
+        <div className="mt-3 pt-2 border-t border-gray-100 flex flex-wrap gap-3 text-[10px] text-gray-400">
           {Object.entries(LAYER_META).map(([layer, m]) => (
             <span key={layer} className="flex items-center gap-1">
-              <span>{m.icon}</span>{m.label}
+              <span>{m.icon}</span><span style={{ color: m.color }}>{m.label}</span>
             </span>
           ))}
         </div>
