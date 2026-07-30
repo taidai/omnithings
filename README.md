@@ -80,9 +80,16 @@ Site (场站)
 | **F0 可视化 V1** | ✅ 已交付 | 点位列表 + 行内编辑 offset/scale + 实时值双列 (raw/eng) + WebSocket 推送 |
 | **Neuron 点位同步** | ✅ 已交付 | `sync_neuron_tags.py` 一键发现节点/分组/标签，自动入库 |
 | **F0 快照黑板** | ✅ 已交付 | 节点级全量 JSONB 快照，时间戳对齐 |
-| **F1 虚拟点位** | 🔨 规划中 | SymPy 公式引擎 + 级联传播 |
-| **F3 节点聚合** | 🔨 规划中 | 5 层树 + 每层汇总值 |
-| **F2 控制规则** | 🔨 规划中 | GoRules JDM + RPC 回写 + 审计日志 |
+| **F1 历史数据** | ✅ 已交付 | `t_telemetry` 超级表（hypertable）+ `t_telemetry_latest` 最新值缓存 |
+| **F1 虚拟点位** | ✅ 已交付 | 公式引擎 + 条件表达式，逻辑点位实时求值入库 |
+| **F3 节点聚合** | ✅ 已交付 | 5 层树 + 每层 SUM/AVG/MAX/MIN/COUNT/LAST 汇总（10s 周期） |
+| **F2 控制规则** | ✅ 已交付 | 规则引擎 + 告警产生/确认 + RPC 下行（模拟端点） |
+
+> 验收状态：F0/F1/F2/F3 端到端验收脚本 **35 passed / 0 failed**（`backend/acceptance_f0_f3.py`），已部署至 e606 线上环境。
+
+### 实现效果图
+
+![OmniThings 首页](docs/images/omnithings-home.png)
 
 ---
 

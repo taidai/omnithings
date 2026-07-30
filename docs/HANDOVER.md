@@ -1,6 +1,6 @@
 # OmniThings 工程交接包
 
-> 生成时间：2026-07-30
+> 生成时间：2026-07-31
 > 用途：让另一款 AI 软件（如 Codex/Cursor/Claude Code）或人类开发者能直接接手当前工程。
 
 ---
@@ -9,7 +9,7 @@
 
 **OmniThings**（内部代号 Claw）是 OmniPower 工业物联网数据采集与入库平台。
 
-- 当前阶段：**F0 验收通过，F3 已部署并端到端验证**
+- 当前阶段：**F0 / F1 / F2 / F3 全部验收通过（验收脚本 35 passed, 0 failed），并已部署到 e606**
 - 核心目标：通过 Neuron 工业协议网关采集设备数据，经 NanoMQ 总线，由 FastAPI 后端解析、归一化、写入 TimescaleDB，并提供前端管理界面。
 - 线上环境：http://e606.hlszh.com:9000/
 
@@ -59,11 +59,15 @@ Claw/
 │   │   │   ├── nodes.py   # 节点树 CRUD、YAML 导入导出
 │   │   │   ├── tags.py    # 点位管理、Neuron 挂载导入
 │   │   │   ├── neuron.py  # Neuron 代理层
+│   │   │   ├── rules.py   # F2 规则引擎 CRUD
+│   │   │   ├── alarms.py  # F2 告警查询/确认
+│   │   │   ├── rpc.py     # F2 下行控制（模拟端点）
 │   │   │   ├── telemetry.py
-│   │   │   ├── pipeline.py
 │   │   │   └── ...
 │   │   ├── services/      # 业务逻辑
 │   │   │   ├── aggregator.py   # F3 聚合器
+│   │   │   ├── formula_engine.py # F1 公式/条件引擎
+│   │   │   ├── rule_engine.py    # F2 规则引擎（告警/RPC 触发）
 │   │   │   ├── neuron_client.py # Neuron API 封装
 │   │   │   ├── parser.py
 │   │   │   ├── normalizer.py
@@ -97,6 +101,11 @@ Claw/
 | 功能域 | 状态 | 关键文件 |
 |--------|------|----------|
 | F0 采集点位管理+入库 | ✅ 已验收 | `backend/app/services/*`, `frontend/src/components/TagsTable.tsx` |
+| F1 历史数据（超级表 + latest 缓存） | ✅ 已验收 | `init-db/*`（`t_telemetry` hypertable + `t_telemetry_latest`）, `backend/app/services/telemetry_store.py` |
+| F1 逻辑点位（公式/条件引擎） | ✅ 已验收 | `backend/app/services/formula_engine.py`, `backend/app/api/tags.py` |
+| F2 规则引擎（条件触发） | ✅ 已验收 | `backend/app/services/rule_engine.py`, `backend/app/api/rules.py` |
+| F2 告警（产生/查询/确认） | ✅ 已验收 | `backend/app/api/alarms.py`, `backend/app/services/rule_engine.py` |
+| F2 下行 RPC（模拟端点） | ✅ 已验收 | `backend/app/api/rpc.py` |
 | F3 节点树（自定义节点） | ✅ 已部署 | `frontend/src/components/NodeTreeEditor.tsx`, `backend/app/api/nodes.py` |
 | F3 挂载设备（Neuron 导入） | ✅ 已验证 | `backend/app/api/tags.py::import-neuron`, `backend/app/services/neuron_client.py` |
 | F3 聚合器（SUM/AVG/MAX/MIN/COUNT/LAST） | ✅ 已验证 | `backend/app/services/aggregator.py`, `app/main.py` |
@@ -204,10 +213,18 @@ docker logs omnithings --since 5m | grep -i aggregation
 
 ## 11. 下一步建议（可选）
 
-1. **F1/F2 规划**：控制域、规则引擎、告警。
-2. **性能优化**：Tags API 从 psycopg2 同步改为 asyncpg。
-3. **重建镜像**：在能正常 build 的机器上按新 Dockerfile 构建 arm64 镜像，替换 e606 的 commit 层。
-4. **测试覆盖**：当前 backend/tests/ 有 18 个单测，可扩展端到端测试。
+1. **性能优化**：Tags API 从 psycopg2 同步改为 asyncpg。
+2. **重建镜像**：在能正常 build 的机器上按新 Dockerfile 构建 arm64 镜像，替换 e606 的 commit 层。
+3. **测试覆盖**：当前 backend/tests/ 有 18 个单测，可扩展端到端测试。
+4. **F2 真实下行通道**：当前 RPC 为模拟端点，后续接 NanoMQ 下行主题 / Neuron write API。
+
+---
+
+## 12. 实现效果图
+
+e606 线上环境首页（http://e606.hlszh.com:9000/）：
+
+![OmniThings 首页](images/omnithings-home.png)
 
 ---
 
