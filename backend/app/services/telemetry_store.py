@@ -210,6 +210,67 @@ async def batch_insert_snapshots(
     return inserted
 
 
+
+
+_LATEST_UPSERT_SQL = """
+INSERT INTO t_telemetry_latest (node_id, tag_id, ts, value_float, value_int,
+                                value_bool, value_str, is_virtual, quality)
+VALUES %s
+ON CONFLICT (node_id, tag_id) DO UPDATE SET
+    ts = EXCLUDED.ts,
+    value_float = EXCLUDED.value_float,
+    value_int = EXCLUDED.value_int,
+    value_bool = EXCLUDED.value_bool,
+    value_str = EXCLUDED.value_str,
+    is_virtual = EXCLUDED.is_virtual,
+    quality = EXCLUDED.quality,
+    updated_at = now();
+"""
+
+
+async def upsert_telemetry_latest(
+    records: list[TelemetryRecord],
+) -> int:
+    """
+    同步更新 t_telemetry_latest 缓存表。
+
+    与 t_telemetry 一起由 Pipeline 在 flush 时调用，保证最新值读取 O(1)。
+    同一次 flush 中同一 (node_id, tag_id) 可能出现多条，按 ts 去重只保留最新。
+    """
+    if not records:
+        return 0
+
+    # 去重：同一 tag 保留 ts 最新的一条，避免 ON CONFLICT DO UPDATE 同命令冲突
+    latest_by_tag: dict[tuple, TelemetryRecord] = {}
+    for r in records:
+        key = (r.node_id, r.tag_id)
+        existing = latest_by_tag.get(key)
+        if existing is None or r.ts > existing.ts:
+            latest_by_tag[key] = r
+
+    rows = []
+    for r in latest_by_tag.values():
+        rows.append((
+            r.node_id,
+            r.tag_id,
+            r.ts,
+            r.value_float,
+            r.value_int,
+            r.value_bool,
+            r.value_str,
+            r.is_virtual,
+            r.quality or Quality.GOOD.value,
+        ))
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            execute_values(cur, _LATEST_UPSERT_SQL, rows)
+            conn.commit()
+            upserted = cur.rowcount
+
+    logger.debug("[TSDB] Latest upsert {} records (deduped from {})", upserted, len(records))
+    return upserted
+
 # ══════════════════════════════════════
 # 查询 API
 # ══════════════════════════════════════
@@ -298,15 +359,16 @@ def query_latest_values(
     tag_ids: list[UUID] | None = None,
 ) -> list[dict]:
     """
-    每个指定 tag 的最新值 (DISTINCT ON)。
+    每个指定 tag 的最新值。
+
+    直接从 t_telemetry_latest 缓存表读取，避免历史 hypertable 上做 DISTINCT ON。
     用于 Dashboard 实时数字展示。
     """
     base_query = """
-    SELECT DISTINCT ON (tag_id)
-        ts, node_id, tag_id,
-        COALESCE(value_float, value_int::float) as value,
-        is_virtual, quality
-    FROM t_telemetry
+    SELECT ts, node_id, tag_id,
+           COALESCE(value_float, value_int::float) as value,
+           is_virtual, quality
+    FROM t_telemetry_latest
     """
     conditions = []
     params: list = []
@@ -316,11 +378,10 @@ def query_latest_values(
         params.append(tag_ids)
 
     where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-    order = f"{where} ORDER BY tag_id, ts DESC"
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(base_query + order, params)
+            cur.execute(base_query + where, params)
             columns = [desc[0] for desc in cur.description]
             rows = [dict(zip(columns, row)) for row in cur.fetchall()]
 

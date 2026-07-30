@@ -35,7 +35,7 @@ from app.models.schemas import (
 from app.services.mqtt_client import MqttClient
 from app.services.normalizer import TagNormalizationRule, normalize
 from app.services.parser import parse_neuron_json
-from app.services.telemetry_store import batch_insert_snapshots, batch_insert_telemetry, TelemetryRecord
+from app.services.telemetry_store import batch_insert_snapshots, batch_insert_telemetry, upsert_telemetry_latest, TelemetryRecord
 
 
 class DataPipeline:
@@ -355,6 +355,7 @@ class DataPipeline:
             if batch:
                 count = await batch_insert_telemetry(batch)
                 self.metrics.points_written_db += count
+                await upsert_telemetry_latest(batch)
             if snapshot_batch:
                 await batch_insert_snapshots(snapshot_batch)
         except Exception as e:

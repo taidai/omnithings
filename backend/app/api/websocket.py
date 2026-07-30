@@ -87,9 +87,8 @@ class TelemetryBroadcaster:
                 if not rows:
                     continue
 
-                # 计算工程值需要 tag 的 offset/scale — 一次性查出
-                tag_ids_in_rows = [r["tag_id"] for r in rows]
-                configs = await asyncio.to_thread(self._fetch_tag_configs, tag_ids_in_rows)
+                # value 已是工程值，无需二次 offset/scale 转换
+                configs = {}
 
                 # 按客户端订阅过滤并推送
                 for ws in clients:
@@ -99,17 +98,11 @@ class TelemetryBroadcaster:
                         tid = str(r["tag_id"])
                         if wanted and tid not in wanted:
                             continue
-                        cfg = configs.get(tid, {})
-                        raw = r["value"]
-                        eng = None
-                        if raw is not None:
-                            offset = cfg.get("value_offset", 0.0) or 0.0
-                            scale = cfg.get("scale_factor", 1.0) or 1.0
-                            eng = round((raw + offset) * scale, 4)
+                        value = r["value"]
                         payload_tags.append({
                             "tag_id": tid,
-                            "raw_value": raw,
-                            "eng_value": eng,
+                            "raw_value": value,
+                            "eng_value": value,
                             "ts": r["ts"].isoformat() if r["ts"] else None,
                             "quality": r["quality"],
                         })
@@ -129,15 +122,14 @@ class TelemetryBroadcaster:
         from app.services.telemetry_store import get_connection
 
         base = """
-        SELECT DISTINCT ON (tag_id) ts, tag_id,
+        SELECT ts, tag_id,
                COALESCE(value_float, value_int::float) AS value, quality
-        FROM t_telemetry
+        FROM t_telemetry_latest
         """
         params: list = []
         if tag_ids:
             base += " WHERE tag_id = ANY(%s)"
             params.append(tag_ids)
-        base += " ORDER BY tag_id, ts DESC"
 
         with get_connection() as conn:
             with conn.cursor() as cur:

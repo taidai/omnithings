@@ -110,6 +110,16 @@ if status == 200:
     bms_current_expected = 16500.0 * scale + offset
     check('bms_current has latest value', bc is not None and bc.get('raw_value') is not None, bc)
     close_to('bms_current engineering value matches normalizer', bc.get('eng_value') if bc else None, bms_current_expected)
+
+    # Verify t_telemetry_latest cache table mirrors the latest value
+    if bms_current_id:
+        latest_rows = db(
+            'SELECT ts, COALESCE(value_float, value_int::float) AS value, is_virtual FROM t_telemetry_latest WHERE tag_id = %s',
+            (bms_current_id,)
+        )
+        check('t_telemetry_latest has bms_current row', bool(latest_rows), latest_rows)
+        if latest_rows:
+            close_to('t_telemetry_latest bms_current value matches expected', latest_rows[0][1], bms_current_expected)
 else:
     check('bms tags API', False, f'{status}: {tags}')
 

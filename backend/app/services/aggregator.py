@@ -4,7 +4,7 @@ F3 聚合器 (M5 / M8) — LogicalTag 汇总聚合调度
 职责：
   - 每 tick (默认 10s) 扫描所有 formula_type='aggregate' 的启用 LogicalTag
   - 按 aggregate_fn (SUM/AVG/MAX/MIN/COUNT/LAST) 汇总其 sources 点位的最新值
-  - 计算结果作为虚拟点位 (is_virtual=True) 写回 t_telemetry
+  - 计算结果作为虚拟点位 (is_virtual=True) 写回 t_telemetry；同时由 pipeline 同步到 t_telemetry_latest。
   - 供节点树逐层汇总 (子层 → 父层) 使用
 
 设计要点：
@@ -87,6 +87,32 @@ def run_aggregation_tick() -> int:
                     rows_to_write,
                 )
                 written = cur.rowcount
+
+                # 同步写入最新值缓存表 (虚拟聚合点也走同一张缓存表)
+                # rows_to_write 顺序是 (ts, node_id, tag_id, value_float, ...)，需调整为 latest 表顺序
+                latest_rows = [
+                    (node_id, tag_id, ts, value_float, value_int, value_bool, value_str, is_virtual, quality)
+                    for (ts, node_id, tag_id, value_float, value_int, value_bool, value_str, is_virtual, quality)
+                    in rows_to_write
+                ]
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO t_telemetry_latest (node_id, tag_id, ts, value_float, value_int,
+                                                    value_bool, value_str, is_virtual, quality)
+                    VALUES %s
+                    ON CONFLICT (node_id, tag_id) DO UPDATE SET
+                        ts = EXCLUDED.ts,
+                        value_float = EXCLUDED.value_float,
+                        value_int = EXCLUDED.value_int,
+                        value_bool = EXCLUDED.value_bool,
+                        value_str = EXCLUDED.value_str,
+                        is_virtual = EXCLUDED.is_virtual,
+                        quality = EXCLUDED.quality,
+                        updated_at = now();
+                    """,
+                    latest_rows,
+                )
                 conn.commit()
 
     if written:
@@ -98,17 +124,15 @@ def _compute_aggregate(cur, agg_fn: str, sources: list[UUID]) -> float | None:
     """
     对 sources 点位的最新值执行聚合。
 
-    先用 DISTINCT ON 取每个 source tag 的最新一行，再在外层做聚合。
+    从 t_telemetry_latest 缓存表读取每个 source tag 的最新值，再在外层做聚合。
     LAST = 所有 source 中时间戳最新的那个值。
     """
     if agg_fn == "LAST":
         cur.execute(
             """
             SELECT COALESCE(value_float, value_int::float) AS value
-            FROM t_telemetry
+            FROM t_telemetry_latest
             WHERE tag_id = ANY(%s)
-            ORDER BY ts DESC
-            LIMIT 1
             """,
             (sources,),
         )
@@ -123,11 +147,9 @@ def _compute_aggregate(cur, agg_fn: str, sources: list[UUID]) -> float | None:
         f"""
         SELECT {sql_fn}
         FROM (
-            SELECT DISTINCT ON (tag_id)
-                   COALESCE(value_float, value_int::float) AS value
-            FROM t_telemetry
+            SELECT COALESCE(value_float, value_int::float) AS value
+            FROM t_telemetry_latest
             WHERE tag_id = ANY(%s)
-            ORDER BY tag_id, ts DESC
         ) v
         """,
         (sources,),

@@ -128,8 +128,8 @@ async def list_tags(
         "node_name": "n.name",
         "data_type": "t.data_type",
         "unit": "t.unit",
-        "raw_value": "latest.value",
-        "eng_value": "eng_value",
+        "raw_value": "COALESCE(latest.value_float, latest.value_int::float)",
+        "eng_value": "COALESCE(latest.value_float, latest.value_int::float)",
         "scale_factor": "t.scale_factor",
         "value_offset": "t.value_offset",
         "sort_order": "t.sort_order",
@@ -146,20 +146,14 @@ async def list_tags(
         t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
         t.read_write, t.enabled, t.description,
         n.name AS node_name,
-        -- 最新值子查询 (raw + computed eng)
+        -- 最新值缓存表 (raw = eng, 已归一化)
         latest.ts AS latest_ts,
-        latest.value AS raw_value,
-        latest.value::float AS eng_value,
+        latest.value_float AS raw_value,
+        COALESCE(latest.value_float, latest.value_int::float) AS eng_value,
         latest.quality
     FROM t_tags t
     JOIN t_nodes n ON n.id = t.node_id
-    LEFT JOIN LATERAL (
-        SELECT ts, COALESCE(value_float, value_int::float) AS value, quality
-        FROM t_telemetry
-        WHERE tag_id = t.id
-        ORDER BY ts DESC
-        LIMIT 1
-    ) latest ON TRUE
+    LEFT JOIN t_telemetry_latest latest ON latest.tag_id = t.id
     {where}
     ORDER BY
         CASE WHEN latest.ts IS NOT NULL THEN 0 ELSE 1 END,
@@ -242,18 +236,12 @@ async def export_tags_csv(
         t.unit,
         t.scale_factor,
         t.value_offset,
-        latest.value AS raw_value,
-        latest.value::float AS eng_value,
+        COALESCE(latest.value_float, latest.value_int::float) AS raw_value,
+        COALESCE(latest.value_float, latest.value_int::float) AS eng_value,
         latest.ts AS latest_ts
     FROM t_tags t
     JOIN t_nodes n ON n.id = t.node_id
-    LEFT JOIN LATERAL (
-        SELECT ts, COALESCE(value_float, value_int::float) AS value
-        FROM t_telemetry
-        WHERE tag_id = t.id
-        ORDER BY ts DESC
-        LIMIT 1
-    ) latest ON TRUE
+    LEFT JOIN t_telemetry_latest latest ON latest.tag_id = t.id
     {where}
     ORDER BY n.sort_order, t.sort_order, t.name
     LIMIT 5000
@@ -308,16 +296,10 @@ async def get_tag(tag_id: UUID) -> dict:
                        t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
                        t.read_write, t.enabled, t.description,
                        n.name AS node_name,
-                       latest.ts, latest.value AS raw_value, latest.quality
+                       latest.ts, latest.value_float AS raw_value, latest.quality
                 FROM t_tags t
                 JOIN t_nodes n ON n.id = t.node_id
-                LEFT JOIN LATERAL (
-                    SELECT ts, COALESCE(value_float, value_int::float) AS value, quality
-                    FROM t_telemetry
-                    WHERE tag_id = t.id
-                    ORDER BY ts DESC
-                    LIMIT 1
-                ) latest ON TRUE
+                LEFT JOIN t_telemetry_latest latest ON latest.tag_id = t.id
                 WHERE t.id = %s
                 """,
                 (tag_id,),

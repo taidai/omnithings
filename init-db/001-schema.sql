@@ -139,6 +139,30 @@ WITH NO DATA;
 -- tel_agg_1h:   CAGG 1小时聚合 (方案B Path B)
 -- tel_agg_1d:   CAGG 1天聚合 (方案B Path B)
 
+
+-- ═══════════════════════════════════════════════════════════════════
+--  3.5 t_telemetry_latest: 每个 tag 最新值缓存表
+-- ═══════════════════════════════════════════════════════════════════
+-- 避免每次查历史 hypertable 做 DISTINCT ON；写入时由 pipeline 同步 upsert。
+CREATE TABLE IF NOT EXISTS t_telemetry_latest (
+    node_id     UUID NOT NULL REFERENCES t_nodes(id) ON DELETE CASCADE,
+    tag_id      UUID NOT NULL REFERENCES t_tags(id) ON DELETE CASCADE,
+    ts          TIMESTAMPTZ NOT NULL,
+    value_float FLOAT,
+    value_int   BIGINT,
+    value_bool  BOOLEAN,
+    value_str   TEXT,
+    is_virtual  BOOLEAN DEFAULT FALSE,
+    quality     SMALLINT DEFAULT 192,
+    updated_at  TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (node_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_telemetry_latest_tag ON t_telemetry_latest(tag_id);
+CREATE INDEX IF NOT EXISTS idx_telemetry_latest_node ON t_telemetry_latest(node_id);
+
+COMMENT ON TABLE t_telemetry_latest IS 'OmniThings 遥测最新值缓存表 - 每个 tag 一行, 由 pipeline 同步维护';
+
 -- ══════════════════════════════════════
 --  4. t_rules: 规则表 (F2 / GoRules)
 -- ══════════════════════════════════════
