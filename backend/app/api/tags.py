@@ -149,12 +149,7 @@ async def list_tags(
         -- 最新值子查询 (raw + computed eng)
         latest.ts AS latest_ts,
         latest.value AS raw_value,
-        CASE
-            WHEN latest.value IS NULL THEN NULL
-            WHEN t.scale_factor = 1.0 AND t.value_offset = 0.0
-                THEN latest.value::float
-            ELSE (latest.value + t.value_offset) * t.scale_factor
-        END AS eng_value,
+        latest.value::float AS eng_value,
         latest.quality
     FROM t_tags t
     JOIN t_nodes n ON n.id = t.node_id
@@ -248,12 +243,7 @@ async def export_tags_csv(
         t.scale_factor,
         t.value_offset,
         latest.value AS raw_value,
-        CASE
-            WHEN latest.value IS NULL THEN NULL
-            WHEN t.scale_factor = 1.0 AND t.value_offset = 0.0
-                THEN latest.value::float
-            ELSE (latest.value + t.value_offset) * t.scale_factor
-        END AS eng_value,
+        latest.value::float AS eng_value,
         latest.ts AS latest_ts
     FROM t_tags t
     JOIN t_nodes n ON n.id = t.node_id
@@ -344,9 +334,7 @@ async def get_tag(tag_id: UUID) -> dict:
                 tag["latest_ts"] = tag["ts"].isoformat()
             if tag.get("raw_value") is not None:
                 tag["raw_value"] = float(tag["raw_value"])
-                tag["eng_value"] = round(
-                    (tag["raw_value"] + (tag["value_offset"] or 0)) * (tag["scale_factor"] or 1), 4
-                )
+                tag["eng_value"] = round(tag["raw_value"], 4)
 
     return tag
 
@@ -419,7 +407,7 @@ async def get_tag_history(
                 ts, raw = row
                 eng = None
                 if raw is not None:
-                    eng = round((float(raw) + (value_offset or 0)) * (scale_factor or 1), 4)
+                    eng = round(float(raw), 4)
                 points.append({
                     "ts": ts.isoformat(),
                     "raw_value": round(float(raw), 4) if raw is not None else None,
