@@ -31,9 +31,16 @@ def http(method, path, body=None):
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             raw = r.read()
-            return r.status, json.loads(raw) if raw else {}
+            try:
+                return r.status, json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                return r.status, {'raw': raw.decode('utf-8', errors='replace') if raw else ''}
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read() or '{}')
+        body = e.read()
+        try:
+            return e.code, json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            return e.code, {'raw': body.decode('utf-8', errors='replace') if body else ''}
     except Exception as e:
         return 0, {'error': str(e)}
 
@@ -46,7 +53,7 @@ def db(query, params=None):
     return rows
 
 print('='*60)
-print('OmniThings F0 + F1 + F3 Acceptance on e606')
+print('OmniThings F0 + F1 + F2 + F3 Acceptance on e606')
 print('='*60)
 
 # ---------- F0: Health + pipeline metrics ----------
@@ -286,6 +293,80 @@ finally:
     if condition_tag_id:
         print('  cleaning up condition tag...')
         http('DELETE', f'/tags/{condition_tag_id}')
+
+# ---------- F2: Rules / Alarms / RPC ----------
+print('\n--- F2.1 Alarm rule trigger and acknowledge ---')
+rule_id = None
+alarm_id = None
+try:
+    alarm_rule_body = {
+        'name': f'_accept_alarm_rule_{int(time.time())}',
+        'rule_type': 'alarm',
+        'jdm_content': {
+            'when': 'bms_current > -2000',
+            'actions': [
+                {'type': 'alarm', 'level': 'MAJOR', 'message': '验收：bms_current 超过阈值'}
+            ]
+        },
+        'enabled': True,
+    }
+    status, rule_created = http('POST', '/rules', alarm_rule_body)
+    check('created alarm rule', status in (200, 201), f'{status}: {rule_created}')
+    rule_id = rule_created.get('id') if status in (200, 201) else None
+
+    if rule_id:
+        # 确保来源数据存在（已发布过）
+        print(f'  rule_id={rule_id}, waiting for rule tick (up to {AGG_POLL_MAX}s)...')
+        alarm_id = None
+        for i in range(0, AGG_POLL_MAX, AGG_POLL_INTERVAL):
+            time.sleep(AGG_POLL_INTERVAL)
+            status, alarms = http('GET', '/alarms?active=true&level=MAJOR')
+            if status == 200:
+                found = next((a for a in alarms.get('alarms', []) if a.get('rule_id') == rule_id), None)
+                if found:
+                    alarm_id = found.get('id')
+                    print(f'  [{i+AGG_POLL_INTERVAL}s] alarm_id={alarm_id}')
+                    break
+            print(f'  [{i+AGG_POLL_INTERVAL}s] no alarm yet (status={status})')
+
+        check('alarm created by rule', alarm_id is not None, alarms)
+
+        if alarm_id:
+            status, ack = http('PUT', f'/alarms/{alarm_id}/acknowledge', {'ack_user': 'acceptance'})
+            check('acknowledged alarm', status == 200, f'{status}: {ack}')
+
+            # 确认后查 acknowledged=true 应该能查到已确认记录
+            status, alarms = http('GET', '/alarms?acknowledged=true')
+            found = next((a for a in alarms.get('alarms', []) if a.get('id') == alarm_id), None) if status == 200 else None
+            check('alarm marked acknowledged', found is not None and found.get('acknowledged') is True, found)
+
+    print('\n--- F2.2 Rule simulation endpoint ---')
+    if rule_id:
+        status, sim = http('POST', f'/rules/{rule_id}/simulate', {'context': {'bms_current': -500}})
+        check('rule simulation true for -500', status == 200 and sim.get('triggered') is True, sim)
+        status, sim = http('POST', f'/rules/{rule_id}/simulate', {'context': {'bms_current': -3000}})
+        check('rule simulation false for -3000', status == 200 and sim.get('triggered') is False, sim)
+finally:
+    if rule_id:
+        print('  cleaning up alarm rule...')
+        http('DELETE', f'/rules/{rule_id}')
+
+print('\n--- F2.3 RPC command writes audit log ---')
+status, rpc_resp = http('POST', '/devices/55555555-5555-5555-5555-555555555555/rpc', {
+    'command': 'test_breaker',
+    'payload': {'tag': 'breaker', 'value': 1},
+    'topic': 'neuron/en9_bms/write',
+})
+check('rpc endpoint accepted', status in (200, 201), f'{status}: {rpc_resp}')
+
+audit_rows = db(
+    'SELECT action, target_type, details FROM t_audit_log WHERE action = %s AND target_id = %s ORDER BY created_at DESC LIMIT 1',
+    ('RPC', '55555555-5555-5555-5555-555555555555')
+)
+check('rpc audit log row exists', bool(audit_rows), audit_rows)
+if audit_rows:
+    details = audit_rows[0][2]
+    check('rpc audit log contains command', 'test_breaker' in str(details), details)
 
 print('\n' + '='*60)
 print(f'RESULT: {PASS} passed, {FAIL} failed')
