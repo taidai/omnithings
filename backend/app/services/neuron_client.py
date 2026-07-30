@@ -164,8 +164,11 @@ class NeuronClient:
     # ══════════════════════════════════════
 
     def get_tags(self, node_name: str, group_name: str) -> list[dict]:
-        """获取组下的点位列表。"""
-        data = self._request("GET", f"/api/v2/tag?node={node_name}&group={group_name}")
+        """获取组下的点位列表。
+
+        Neuron 2.10.x 使用复数路径 /api/v2/tags；单数 /api/v2/tag 在 2.10 会 404。
+        """
+        data = self._request("GET", f"/api/v2/tags?node={node_name}&group={group_name}")
         return data.get("tags", [])
 
     def add_tags(self, node_name: str, group_name: str, tags: list[dict]) -> dict:

@@ -232,3 +232,76 @@ class PipelineMetrics(BaseModel):
     last_message_at: datetime | None = None
     started_at: datetime | None = None
     uptime_seconds: float = 0.0
+
+
+# ══════════════════════════════════════
+# F3: 节点树域 — 5 层统一模型 (M1 节点树引擎)
+# ══════════════════════════════════════
+#
+#   Site(L1) → Station(L2) → EnergyNode(L3) → Device(L4) → Tag(L5)
+#
+# 节点树是 F3 的核心：每层可挂载点位 (PhysicalTag / LogicalTag)，
+# 父节点通过 LogicalTag 汇总子节点点位 (SUM/AVG/MAX/MIN)。
+
+
+class NodeLayer(int, Enum):
+    """节点层级 (对应 t_nodes.layer CHECK 1~5)。"""
+
+    SITE = 1        # 场站/园区
+    STATION = 2     # 站点
+    ENERGY_NODE = 3  # 能量节点 (ESS/PV/GRID/EVSE)
+    DEVICE = 4      # 设备
+    TAG = 5         # 点位挂载层 (通常 tag 直接挂 Device, 该层备用)
+
+
+class NodeCreate(BaseModel):
+    """创建节点请求 (POST /nodes)。"""
+
+    name: str = Field(..., min_length=1, max_length=128, description="节点名")
+    parent_id: UUID | None = Field(None, description="父节点 ID (根节点为 None)")
+    layer: int = Field(..., ge=1, le=5, description="层级 1~5")
+    node_type: str | None = Field(None, description="节点子类型, 如 ESS/PV/GRID/EVSE")
+    config: dict = Field(default_factory=dict, description="扩展配置 JSONB")
+    sort_order: int = Field(0, description="同级排序")
+    enabled: bool = True
+
+
+class NodeUpdate(BaseModel):
+    """更新节点请求 (PUT /nodes/{id}) — 全部字段可选, 部分更新。"""
+
+    name: str | None = Field(None, min_length=1, max_length=128)
+    parent_id: UUID | None = None
+    node_type: str | None = None
+    config: dict | None = None
+    sort_order: int | None = None
+    enabled: bool | None = None
+
+
+class NodeResponse(BaseModel):
+    """节点响应 (扁平)。"""
+
+    id: UUID
+    name: str
+    parent_id: UUID | None = None
+    layer: int
+    node_type: str | None = None
+    config: dict = Field(default_factory=dict)
+    sort_order: int = 0
+    enabled: bool = True
+    tag_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class NodeTree(BaseModel):
+    """递归树节点 (GET /nodes/{id}/tree)。"""
+
+    id: UUID
+    name: str
+    parent_id: UUID | None = None
+    layer: int
+    node_type: str | None = None
+    sort_order: int = 0
+    enabled: bool = True
+    tag_count: int = 0
+    children: list["NodeTree"] = Field(default_factory=list)

@@ -3,10 +3,8 @@ V4 端到端验证: 发布模拟 Neuron 消息 → 验证管道消费 → 验证
 
 用法: python test_f0_e2e.py
 前置: backend uvicorn 已在 :9000 运行 + mosquitto @1883 + TSDB @5432
-配置: 通过环境变量 DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD 覆盖默认值
 """
 import json
-import os
 import sys
 import time
 import urllib.request
@@ -14,16 +12,9 @@ import urllib.request
 import paho.mqtt.client as mqtt
 import psycopg2
 
-MQTT_HOST = os.environ.get("MQTT_HOST", "127.0.0.1")
-MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
-API = os.environ.get("API_URL", "http://127.0.0.1:9000") + "/api/v1/health"
-DB_DSN = (
-    f"host={os.environ.get('DB_HOST', '127.0.0.1')} "
-    f"port={os.environ.get('DB_PORT', '5432')} "
-    f"dbname={os.environ.get('DB_NAME', 'omnithings')} "
-    f"user={os.environ.get('DB_USER', 'omnithings')} "
-    f"password={os.environ.get('DB_PASSWORD', 'omnidev_2026')}"
-)
+MQTT_HOST, MQTT_PORT = "127.0.0.1", 1883
+API = "http://127.0.0.1:9000/api/v1/health"
+DB_DSN = "host=127.0.0.1 port=5432 dbname=omnithings_iot user=omnithings password=omnidev_2026"
 
 PASS = FAIL = 0
 

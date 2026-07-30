@@ -14,6 +14,7 @@ export interface Node {
   parent_id: string | null
   layer: number
   node_type: string
+  config?: Record<string, any>
   sort_order: number
   enabled: boolean
   tag_count: number
@@ -103,6 +104,135 @@ export async function fetchNodes(): Promise<Node[]> {
   const res = await fetch(`${API_BASE}/nodes`)
   const data = await res.json()
   return data.nodes || []
+}
+
+// ── Node Tree API (F3) ──
+
+export interface TreeNode {
+  id: string
+  name: string
+  parent_id: string | null
+  layer: number
+  node_type: string
+  config: Record<string, any>
+  sort_order: number
+  enabled: boolean
+  tag_count: number
+  children: TreeNode[]
+}
+
+export interface NodeTag {
+  id: string
+  name: string
+  display_name: string | null
+  data_type: string
+  tag_type: string
+  unit: string | null
+  scale_factor: number
+  value_offset: number
+  source_path: string | null
+  read_write: string
+  enabled: boolean
+}
+
+/** 以 rootId 为根拉取整棵子树 (最大 5 层)。 */
+export async function fetchNodeTree(rootId: string): Promise<TreeNode | null> {
+  const res = await fetch(`${API_BASE}/nodes/${rootId}/tree`)
+  if (!res.ok) throw new Error(`Fetch tree failed: ${res.status}`)
+  const data = await res.json()
+  return data.tree || null
+}
+
+/** 获取单个节点详情 (含其 tags 列表，用于实时值订阅)。 */
+export async function fetchNodeDetail(nodeId: string): Promise<{ node: Node; tags: NodeTag[] }> {
+  const res = await fetch(`${API_BASE}/nodes/${nodeId}`)
+  if (!res.ok) throw new Error(`Fetch node failed: ${res.status}`)
+  return res.json()
+}
+
+export interface NodeCreateInput {
+  name: string
+  parent_id?: string | null
+  layer: number
+  node_type?: string | null
+  config?: Record<string, any>
+  sort_order?: number
+  enabled?: boolean
+}
+
+export async function createNode(input: NodeCreateInput): Promise<{ node: Node }> {
+  const res = await fetch(`${API_BASE}/nodes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `Create node failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function updateNode(nodeId: string, updates: Partial<NodeCreateInput>): Promise<{ node: Node }> {
+  const res = await fetch(`${API_BASE}/nodes/${nodeId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `Update node failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function deleteNode(nodeId: string): Promise<{ deleted: string; cascade_nodes: number }> {
+  const res = await fetch(`${API_BASE}/nodes/${nodeId}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `Delete node failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+export interface TagCreateInput {
+  node_id: string
+  name: string
+  tag_type?: 'PHYSICAL' | 'LOGICAL'
+  data_type?: string
+  display_name?: string
+  unit?: string
+  description?: string
+  aggregate_fn?: string
+  formula?: string
+  formula_type?: string
+  sources?: string[]
+}
+
+export async function createTag(input: TagCreateInput): Promise<{ status: string; id: string; name: string; tag_type: string }> {
+  const res = await fetch(`${API_BASE}/tags`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `Create tag failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function importNeuronTags(input: { node_id: string; neuron_node: string; neuron_group: string }): Promise<{ imported: number; skipped: number; total?: number; message?: string }> {
+  const res = await fetch(`${API_BASE}/tags/import-neuron`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `Import Neuron tags failed: ${res.status}`)
+  }
+  return res.json()
 }
 
 // ── Neuron Proxy API ──

@@ -45,6 +45,7 @@ dependencies = [
     "loguru>=0.7.2",              # 结构化日志
     "pydantic-settings>=2.5.0",   # 配置管理
     "python-multipart>=0.0.12",   # 文件上传支持
+    "pyyaml>=6.0.2",              # 节点树 YAML 导入导出 (M1 F3)
 ]
 
 [project.optional-dependencies]

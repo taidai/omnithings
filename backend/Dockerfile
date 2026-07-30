@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# F0 核心依赖 (清华镜像加速)
+# F0 核心依赖 + F3 运行时依赖 (清华镜像加速)
 RUN pip install --no-cache-dir \
         -i https://pypi.tuna.tsinghua.edu.cn/simple \
         fastapi \
@@ -51,7 +51,10 @@ RUN pip install --no-cache-dir \
         pydantic \
         pydantic-settings \
         pint \
-        websockets
+        websockets \
+        httpx \
+        "apscheduler[asyncio,timezone]>=3.10.4" \
+        "pyyaml>=6.0.2"
 
 # 复制后端应用代码
 COPY backend/app ./app

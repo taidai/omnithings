@@ -26,6 +26,8 @@ services:
     tmpfs:
       - /dev/mqueue
     ports: []
+    # 当前 omnithings:0.1.0 为 commit 层，/etc/passwd 中无 omnithings 用户，先用 root 运行
+    user: root
     environment:
       # host 网络下通过 127.0.0.1 直连同宿主服务
       DB_HOST: 127.0.0.1

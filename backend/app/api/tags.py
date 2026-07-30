@@ -22,6 +22,10 @@ router = APIRouter()
 # Request / Response Models
 # ══════════════════════════════════════
 
+_AGG_FNS = {"SUM", "AVG", "MAX", "MIN", "COUNT", "LAST"}
+_FORMULA_TYPES = {"expression", "aggregate", "condition"}
+
+
 class TagUpdateRequest(BaseModel):
     """允许修改的点位字段。"""
     scale_factor: float | None = Field(None, description="缩放系数")
@@ -31,6 +35,11 @@ class TagUpdateRequest(BaseModel):
     read_write: str | None = Field(None, pattern="^[RrWw]+$", description="读写权限")
     enabled: bool | None = Field(None, description="是否启用")
     description: str | None = Field(None, description="描述")
+    # LogicalTag 汇总规则字段 (S11)
+    aggregate_fn: str | None = Field(None, description="聚合函数 SUM/AVG/MAX/MIN/COUNT/LAST")
+    formula: str | None = Field(None, description="表达式或聚合来源引用")
+    formula_type: str | None = Field(None, description="expression/aggregate/condition")
+    sources: list[str] | None = Field(None, description="来源点位 UUID 列表")
 
 
 class TagResponse(BaseModel):
@@ -49,6 +58,11 @@ class TagResponse(BaseModel):
     read_write: str = "R"
     enabled: bool = True
     description: str | None = None
+    # LogicalTag 汇总规则字段 (S11)
+    aggregate_fn: str | None = None
+    formula: str | None = None
+    formula_type: str | None = None
+    sources: list[str] | None = None
     # 实时值 (由 /tags/{id} 附加)
     raw_value: float | int | bool | str | None = None
     eng_value: float | None = None
@@ -486,11 +500,23 @@ async def update_tag(tag_id: UUID, req: TagUpdateRequest) -> dict:
     """
     from app.services.telemetry_store import get_connection
 
+    data = req.model_dump(exclude_none=True)
+
+    # 校验 LogicalTag 字段
+    if "aggregate_fn" in data and data["aggregate_fn"] not in _AGG_FNS:
+        raise HTTPException(status_code=400, detail=f"aggregate_fn must be one of {sorted(_AGG_FNS)}")
+    if "formula_type" in data and data["formula_type"] not in _FORMULA_TYPES:
+        raise HTTPException(status_code=400, detail=f"formula_type must be one of {sorted(_FORMULA_TYPES)}")
+
     # 构建动态 UPDATE
     updates = []
     params: list = []
-    for field, value in req.model_dump(exclude_none=True).items():
-        if value is not None:
+    for field, value in data.items():
+        if field == "sources":
+            # UUID[] — 转为 psycopg2 可识别的 UUID 列表
+            updates.append("sources = %s")
+            params.append([UUID(s) for s in value])
+        else:
             updates.append(f"{field} = %s")
             params.append(value)
 
@@ -532,3 +558,207 @@ async def update_tag(tag_id: UUID, req: TagUpdateRequest) -> dict:
     except Exception as e:
         logger.error("[API/tags/{tag_id}] Update failed: {}", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ══════════════════════════════════════
+# Neuron 同步导入 (M1 / F3 · S10)
+# ══════════════════════════════════════
+
+class NeuronImportRequest(BaseModel):
+    """从 Neuron 采集组批量导入点位到指定节点。"""
+    node_id: str = Field(..., description="OmniThings 目标节点 (Station/EnergyNode) UUID")
+    neuron_node: str = Field(..., description="Neuron 南向节点名 (driver node)")
+    neuron_group: str = Field(..., description="Neuron 采集组名")
+
+
+# Neuron data type code → OmniThings data_type
+# 参考 Neuron: 3=INT16 4=UINT16 5=INT32 6=UINT32 9=FLOAT 10=DOUBLE 11=BIT ...
+# NOTE: data_type 必须为大写 (t_tags CHECK 约束: FLOAT/INT/BOOL/STRING/ENUM)
+_NEURON_TYPE_MAP = {
+    3: "INT", 4: "INT", 5: "INT", 6: "INT", 7: "INT", 8: "INT",
+    9: "FLOAT", 10: "FLOAT", 11: "BOOL", 13: "STRING",
+}
+
+
+@router.post("/tags/import-neuron")
+async def import_neuron_tags(req: NeuronImportRequest) -> dict:
+    """
+    从 Neuron 指定采集组拉取点位，作为 PHYSICAL 点位挂载到目标节点。
+
+    - source_type = "neuron"
+    - source_path = "{neuron_node}/{neuron_group}/{tag_name}" (供采集管道路由)
+    - 已存在同名点位 (同 node_id + name) 则跳过，避免重复导入。
+    """
+    from app.services.telemetry_store import get_connection
+    from app.services.neuron_client import get_neuron_client
+
+    # 1) 校验目标节点
+    try:
+        node_uuid = UUID(req.node_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid node_id (not a UUID)")
+
+    # 2) 从 Neuron 拉取点位
+    try:
+        client = get_neuron_client()
+        neuron_tags = client.get_tags(req.neuron_node, req.neuron_group)
+    except Exception as e:
+        logger.error("[API/tags/import-neuron] Neuron fetch failed: {}", e)
+        raise HTTPException(status_code=502, detail=f"Neuron fetch failed: {e}")
+
+    if not neuron_tags:
+        return {"imported": 0, "skipped": 0, "message": "No tags in Neuron group"}
+
+    imported = 0
+    skipped = 0
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # 校验节点存在
+                cur.execute("SELECT id FROM t_nodes WHERE id = %s", (node_uuid,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Target node not found")
+
+                # 已存在点位名集合 (去重)
+                cur.execute(
+                    "SELECT name FROM t_tags WHERE node_id = %s", (node_uuid,)
+                )
+                existing = {r[0] for r in cur.fetchall()}
+
+                for nt in neuron_tags:
+                    tname = nt.get("name")
+                    if not tname or tname in existing:
+                        skipped += 1
+                        continue
+
+                    dtype = _NEURON_TYPE_MAP.get(nt.get("type"), "FLOAT")
+                    # Neuron attribute bit0=read bit1=write → RW 权限
+                    attr = nt.get("attribute", 1)
+                    rw = "RW" if (attr & 0x02) else "R"
+                    source_path = f"{req.neuron_node}/{req.neuron_group}/{tname}"
+
+                    cur.execute(
+                        """
+                        INSERT INTO t_tags (node_id, name, display_name, data_type, tag_type,
+                                            source_type, source_path, read_write, enabled)
+                        VALUES (%s, %s, %s, %s, 'PHYSICAL', 'neuron', %s, %s, TRUE)
+                        """,
+                        (node_uuid, tname, tname, dtype, source_path, rw),
+                    )
+                    imported += 1
+                    existing.add(tname)
+
+                conn.commit()
+
+        logger.info(
+            "[API/tags/import-neuron] node={} group={}/{} imported={} skipped={}",
+            req.node_id, req.neuron_node, req.neuron_group, imported, skipped,
+        )
+        return {"imported": imported, "skipped": skipped, "total": len(neuron_tags)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[API/tags/import-neuron] Insert failed: {}", e)
+        raise HTTPException(status_code=500, detail=f"Import failed: {e}")
+
+
+# ══════════════════════════════════════
+# LogicalTag 创建 — 汇总规则挂载 (M5 / F3 · S11)
+# ══════════════════════════════════════
+
+class TagCreateRequest(BaseModel):
+    """创建点位。PHYSICAL 走 Neuron 导入；此端点主要用于 LOGICAL 汇总/派生点位。"""
+    node_id: str = Field(..., description="挂载的目标节点 UUID")
+    name: str = Field(..., min_length=1, description="点位名 (节点内唯一)")
+    tag_type: str = Field("LOGICAL", pattern="^(PHYSICAL|LOGICAL)$", description="PHYSICAL/LOGICAL")
+    data_type: str = Field("FLOAT", description="FLOAT/INT/BOOL/STRING/ENUM")
+    display_name: str | None = Field(None, description="显示名称")
+    unit: str | None = Field(None, description="单位")
+    description: str | None = Field(None, description="描述")
+    # LogicalTag 汇总规则
+    aggregate_fn: str | None = Field(None, description="聚合函数 SUM/AVG/MAX/MIN/COUNT/LAST")
+    formula: str | None = Field(None, description="表达式或聚合来源引用")
+    formula_type: str | None = Field("aggregate", description="expression/aggregate/condition")
+    sources: list[str] = Field(default_factory=list, description="来源点位 UUID 列表")
+
+
+@router.post("/tags")
+async def create_tag(req: TagCreateRequest) -> dict:
+    """
+    创建点位并挂载到指定节点。
+
+    LOGICAL 点位用于节点树汇总聚合 (由 F3 聚合器每 10s 计算)：
+    - formula_type="aggregate" + aggregate_fn=SUM/AVG/... + sources=[子点位UUID...]
+    - 聚合器按 aggregate_fn 汇总 sources 的最新值，写回本点位 (is_virtual=True)
+    """
+    from app.services.telemetry_store import get_connection
+
+    # 1) 校验
+    try:
+        node_uuid = UUID(req.node_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid node_id (not a UUID)")
+
+    data_type = req.data_type.upper()
+    if data_type not in {"FLOAT", "INT", "BOOL", "STRING", "ENUM"}:
+        raise HTTPException(status_code=400, detail="Invalid data_type")
+
+    if req.tag_type == "LOGICAL":
+        if req.formula_type not in _FORMULA_TYPES:
+            raise HTTPException(status_code=400, detail=f"formula_type must be one of {sorted(_FORMULA_TYPES)}")
+        if req.formula_type == "aggregate":
+            if req.aggregate_fn not in _AGG_FNS:
+                raise HTTPException(status_code=400, detail=f"aggregate_fn must be one of {sorted(_AGG_FNS)}")
+            if not req.sources:
+                raise HTTPException(status_code=400, detail="aggregate LogicalTag requires non-empty 'sources'")
+
+    try:
+        source_uuids = [UUID(s) for s in req.sources]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID in 'sources'")
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # 校验节点存在
+                cur.execute("SELECT id FROM t_nodes WHERE id = %s", (node_uuid,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Target node not found")
+
+                # 节点内点位名唯一性
+                cur.execute(
+                    "SELECT 1 FROM t_tags WHERE node_id = %s AND name = %s",
+                    (node_uuid, req.name),
+                )
+                if cur.fetchone():
+                    raise HTTPException(status_code=409, detail="Tag name already exists on this node")
+
+                cur.execute(
+                    """
+                    INSERT INTO t_tags (node_id, name, display_name, data_type, tag_type,
+                                        unit, description, read_write,
+                                        aggregate_fn, formula, formula_type, sources, enabled)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'R', %s, %s, %s, %s, TRUE)
+                    RETURNING id
+                    """,
+                    (
+                        node_uuid, req.name, req.display_name, data_type, req.tag_type,
+                        req.unit, req.description,
+                        req.aggregate_fn, req.formula,
+                        req.formula_type if req.tag_type == "LOGICAL" else None,
+                        source_uuids,
+                    ),
+                )
+                new_id = cur.fetchone()[0]
+                conn.commit()
+
+        logger.info(
+            "[API/tags] created {} tag id={} name={} on node={}",
+            req.tag_type, new_id, req.name, req.node_id,
+        )
+        return {"status": "ok", "id": str(new_id), "name": req.name, "tag_type": req.tag_type}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[API/tags] Create failed: {}", e)
+        raise HTTPException(status_code=500, detail=f"Create failed: {e}")

@@ -26,12 +26,16 @@ logger.add(
 
 # Pipeline 实例引用 (供 Health API 使用)
 _pipeline = None
+# F3 聚合调度器引用
+_scheduler = None
+# 聚合 tick 间隔 (秒)
+AGGREGATION_INTERVAL_SEC = 10
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan — 启停 F0 数据管道。"""
-    global _pipeline
+    """Application lifespan — 启停 F0 数据管道 + F3 聚合调度器。"""
+    global _pipeline, _scheduler
 
     # ---- Startup ----
     logger.info("OmniThings IoT Platform starting up...")
@@ -53,10 +57,42 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.error("[Main] Shutting down — no MQTT ingestion without pipeline")
         raise  # fail-fast: 管道是核心组件，死了就不该假装活着
 
+    # Phase 2 S12: 启动 F3 聚合调度器 (LogicalTag 汇总)
+    # 非致命：聚合器失败不影响 F0 采集主链路
+    try:
+        import asyncio
+
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+        from app.services.aggregator import run_aggregation_tick
+
+        async def _agg_job() -> None:
+            # psycopg2 阻塞 → 丢到线程池，避免卡住事件循环
+            await asyncio.to_thread(run_aggregation_tick)
+
+        _scheduler = AsyncIOScheduler(timezone="UTC")
+        _scheduler.add_job(
+            _agg_job,
+            "interval",
+            seconds=AGGREGATION_INTERVAL_SEC,
+            id="f3_aggregation",
+            coalesce=True,          # 积压时只跑最近一次
+            max_instances=1,        # 禁止并发重入
+            misfire_grace_time=300,
+        )
+        _scheduler.start()
+        logger.success("[Main] F3 aggregation scheduler started ({}s) ✅", AGGREGATION_INTERVAL_SEC)
+    except Exception as e:
+        logger.error("[Main] F3 scheduler failed to start (non-fatal): {}", e)
+        _scheduler = None
+
     yield
 
     # ---- Shutdown ----
     logger.info("OmniThings IoT Platform shutting down...")
+    if _scheduler:
+        _scheduler.shutdown(wait=False)
+        logger.info("[Main] F3 aggregation scheduler stopped")
     if _pipeline:
         await _pipeline.stop()
         logger.info("[Main] F0 data pipeline stopped")

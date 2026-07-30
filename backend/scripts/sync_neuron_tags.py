@@ -20,24 +20,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import urllib.request
 
 import psycopg2
 
-# 从环境变量读取配置，dev 默认值与 .env.example 一致
-NEURON = os.environ.get("NEURON_API_URL", "http://127.0.0.1:7000") + "/api/v2"
-NEURON_USER = os.environ.get("NEURON_USER", "admin")
-NEURON_PASS = os.environ.get("NEURON_PASS", "0000")
+NEURON = "http://127.0.0.1:7000/api/v2"
+NEURON_USER = "admin"
+NEURON_PASS = "0000"
 
-DB_DSN = (
-    f"host={os.environ.get('DB_HOST', '127.0.0.1')} "
-    f"port={os.environ.get('DB_PORT', '5432')} "
-    f"dbname={os.environ.get('DB_NAME', 'omnithings')} "
-    f"user={os.environ.get('DB_USER', 'omnithings')} "
-    f"password={os.environ.get('DB_PASSWORD', 'omnidev_2026')}"
-)
+DB_DSN = "host=127.0.0.1 port=5432 dbname=omnithings user=omnithings password=omnidev_2026"
 
 # Neuron type code → OmniThings data_type
 TYPE_MAP = {
