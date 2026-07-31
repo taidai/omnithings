@@ -115,11 +115,11 @@ async def execute_sql(req: SqlQueryRequest) -> dict:
 # 3. 清空指定表
 # ══════════════════════════════════════
 
-TRUNCATE_WHITELIST = {'t_telemetry', 't_audit_log'}
+TRUNCATE_WHITELIST = {'t_telemetry', 't_audit_log', 't_node_snapshot'}
 
 
 class TruncateRequest(BaseModel):
-    table: str = Field(..., description="表名 (白名单: t_telemetry, t_audit_log)")
+    table: str = Field(..., description="表名 (白名单: t_telemetry, t_audit_log, t_node_snapshot)")
     confirm: str = Field(..., description="确认字符串, 必须输入 'yes' 才执行")
 
 

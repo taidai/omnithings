@@ -33,14 +33,14 @@ COMMENT ON COLUMN t_node_snapshot.raw_data IS '全量原始值快照 {tag_name: 
 COMMENT ON COLUMN t_node_snapshot.raw_message IS '原始 MQTT 报文 (Neuron 推送的完整 payload)';
 COMMENT ON COLUMN t_node_snapshot.quality IS 'OPC UA Quality: 192=GOOD, 64=UNCERTAIN, 0=BAD';
 
--- 压缩策略: 7 天后压缩
+-- 压缩策略: 6 小时后压缩 (需在保留期内生效)
 ALTER TABLE t_node_snapshot SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'node_id',
     timescaledb.compress_orderby = 'ts DESC'
 );
 
-SELECT add_compression_policy('t_node_snapshot', INTERVAL '7 days');
+SELECT add_compression_policy('t_node_snapshot', INTERVAL '6 hours');
 
--- 保留策略: 30 天
-SELECT add_retention_policy('t_node_snapshot', INTERVAL '30 days');
+-- 保留策略: 只保留最近 1 天
+SELECT add_retention_policy('t_node_snapshot', INTERVAL '1 day');

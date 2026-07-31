@@ -148,7 +148,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="OmniThings API",
         description="OmniThings IoT Platform - 替代 ThingsBoard 的工业 IoT 开发平台",
-        version="0.1.0",
+        version="0.4.0",
         lifespan=lifespan,
         docs_url="/api/docs",
         redoc_url="/api/redoc",
