@@ -136,7 +136,12 @@ def _extract_triggered(outputs: Any) -> bool:
             return bool(outputs["triggered"])
         if outputs.get("result") is not None:
             return bool(outputs["result"])
-        return any(bool(v) for v in outputs.values())
+        # 决策表输出可能包含 level/message 等字符串，只看布尔/数字字段
+        return any(
+            bool(v)
+            for k, v in outputs.items()
+            if isinstance(v, (bool, int, float)) or (isinstance(v, str) and v.lower() in ("true", "yes", "1"))
+        )
     return bool(outputs)
 
 
@@ -191,9 +196,27 @@ def evaluate_rule(jdm_content: dict, context: dict[str, Any]) -> dict:
                 "engine": "error",
             }
         try:
-            outputs = _evaluate_jdm_zen(jdm_content, context)
+            # 标准 JDM 同样只需要 value 上下文
+            if context and isinstance(context, dict) and any(isinstance(v, dict) and "value" in v for v in context.values()):
+                jdm_ctx = {k: v["value"] for k, v in context.items() if isinstance(v, dict) and "value" in v}
+            else:
+                jdm_ctx = context
+            outputs = _evaluate_jdm_zen(jdm_content, jdm_ctx)
             triggered = _extract_triggered(outputs)
-            actions = jdm_content.get("actions", []) if triggered else []
+            actions: list[dict] = []
+            if triggered:
+                # 优先使用顶层 actions 字段
+                actions = list(jdm_content.get("actions", []))
+                # 如果 outputs 中包含动作字段，动态构造 action
+                action_type = outputs.get("action_type") if isinstance(outputs, dict) else None
+                level = outputs.get("level") if isinstance(outputs, dict) else None
+                message = outputs.get("message") if isinstance(outputs, dict) else None
+                if action_type or level or message:
+                    actions.append({
+                        "type": action_type or "alarm",
+                        "level": level or "WARNING",
+                        "message": message or "rule triggered",
+                    })
             return {
                 "triggered": triggered,
                 "actions": actions,
@@ -215,6 +238,12 @@ def evaluate_rule(jdm_content: dict, context: dict[str, Any]) -> dict:
     when = jdm_content.get("when")
     actions = jdm_content.get("actions", [])
 
+    # 兼容两种 context：{tag: value} 和 {tag: {value, tag_id, node_id}}
+    if context and isinstance(context, dict) and any(isinstance(v, dict) and "value" in v for v in context.values()):
+        ctx_values = {k: v["value"] for k, v in context.items() if isinstance(v, dict) and "value" in v}
+    else:
+        ctx_values = context
+
     if not when:
         return {
             "triggered": False,
@@ -228,9 +257,9 @@ def evaluate_rule(jdm_content: dict, context: dict[str, Any]) -> dict:
 
     try:
         if _ZEN_AVAILABLE:
-            triggered = _evaluate_expression_zen(when, context)
+            triggered = _evaluate_expression_zen(when, ctx_values)
         else:
-            triggered = _eval_condition_ast(when, context)
+            triggered = _eval_condition_ast(when, ctx_values)
     except Exception as e:
         logger.warning("[GoRules] expression evaluation failed ({}): {}", engine_used, e)
         return {

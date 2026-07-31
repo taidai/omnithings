@@ -51,11 +51,16 @@ async def list_alarms(
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT a.id, a.rule_id, a.node_id, a.level, a.message,
+                SELECT a.id, a.rule_id, a.node_id, a.tag_id, a.trigger_tag_name,
+                       a.trigger_value, a.level, a.message,
                        a.acknowledged, a.ack_user, a.ack_at, a.created_at, a.resolved_at,
-                       r.name AS rule_name
+                       r.name AS rule_name,
+                       n.name AS node_name,
+                       t.name AS tag_name
                 FROM t_alarms a
                 LEFT JOIN t_rules r ON r.id = a.rule_id
+                LEFT JOIN t_nodes n ON n.id = a.node_id
+                LEFT JOIN t_tags t ON t.id = a.tag_id
                 {where}
                 ORDER BY a.created_at DESC
                 LIMIT %s OFFSET %s
@@ -69,13 +74,18 @@ async def list_alarms(
 
     alarms = []
     for row in rows:
-        (aid, rule_id, node_id, level, message, acknowledged, ack_user, ack_at,
-         created_at, resolved_at, rule_name) = row
+        (aid, rule_id, node_id, tag_id, trigger_tag_name, trigger_value, level, message,
+         acknowledged, ack_user, ack_at, created_at, resolved_at,
+         rule_name, node_name, tag_name) = row
         alarms.append({
             "id": str(aid),
             "rule_id": str(rule_id) if rule_id else None,
             "rule_name": rule_name,
             "node_id": str(node_id) if node_id else None,
+            "node_name": node_name,
+            "tag_id": str(tag_id) if tag_id else None,
+            "tag_name": tag_name or trigger_tag_name,
+            "trigger_value": trigger_value,
             "level": level,
             "message": message,
             "acknowledged": acknowledged,

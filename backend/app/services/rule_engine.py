@@ -26,34 +26,42 @@ from loguru import logger
 from app.services.gorules_adapter import evaluate_rule
 
 
-def _build_context(cur) -> dict[str, float | bool | int | str]:
-    """从 t_telemetry_latest 构建 tag_name -> value 上下文。"""
+def _build_context(cur) -> dict[str, dict[str, any]]:
+    """从 t_telemetry_latest 构建 tag_name -> {value, tag_id, node_id} 上下文。"""
     cur.execute(
         """
-        SELECT t.name, l.value_float, l.value_int, l.value_bool, l.value_str
+        SELECT t.id, t.node_id, t.name,
+               l.value_float, l.value_int, l.value_bool, l.value_str
         FROM t_telemetry_latest l
         JOIN t_tags t ON t.id = l.tag_id
         """
     )
-    ctx: dict[str, float | bool | int | str] = {}
-    for name, value_float, value_int, value_bool, value_str in cur.fetchall():
+    ctx: dict[str, dict[str, any]] = {}
+    for tag_id, node_id, name, value_float, value_int, value_bool, value_str in cur.fetchall():
+        value: float | bool | int | str | None = None
         if value_bool is not None:
-            ctx[name] = value_bool
+            value = value_bool
         elif value_str is not None:
             if value_str.lower() in ("true", "false"):
-                ctx[name] = value_str.lower() == "true"
+                value = value_str.lower() == "true"
             else:
                 try:
                     if "." in value_str:
-                        ctx[name] = float(value_str)
+                        value = float(value_str)
                     else:
-                        ctx[name] = int(value_str)
+                        value = int(value_str)
                 except ValueError:
-                    ctx[name] = value_str
+                    value = value_str
         elif value_float is not None:
-            ctx[name] = value_float
+            value = value_float
         elif value_int is not None:
-            ctx[name] = value_int
+            value = value_int
+
+        ctx[name] = {
+            "value": value,
+            "tag_id": tag_id,
+            "node_id": node_id,
+        }
     return ctx
 
 
@@ -69,13 +77,30 @@ def _has_active_alarm(cur, rule_id: UUID) -> bool:
     return cur.fetchone() is not None
 
 
-def _create_alarm(cur, rule_id: UUID, node_id: UUID | None, level: str, message: str) -> None:
+def _create_alarm(
+    cur,
+    rule_id: UUID,
+    node_id: UUID | None,
+    tag_id: UUID | None,
+    trigger_tag_name: str | None,
+    trigger_value: float | int | bool | str | None,
+    level: str,
+    message: str,
+) -> None:
     cur.execute(
         """
-        INSERT INTO t_alarms (rule_id, node_id, level, message, created_at)
-        VALUES (%s, %s, %s, %s, now())
+        INSERT INTO t_alarms (rule_id, node_id, tag_id, trigger_tag_name, trigger_value, level, message, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, now())
         """,
-        (rule_id, node_id, level, message),
+        (
+            rule_id,
+            node_id,
+            tag_id,
+            trigger_tag_name,
+            float(trigger_value) if isinstance(trigger_value, (int, float)) else None,
+            level,
+            message,
+        ),
     )
 
 
@@ -134,6 +159,20 @@ def _execute_control(cur, rule_id: UUID, action: dict, context: dict) -> bool:
     return True
 
 
+
+def _context_values(context: dict[str, dict[str, any]]) -> dict[str, float | bool | int | str]:
+    """把带元信息的上下文展平为 tag_name -> value，供 GoRules 求值使用。"""
+    return {k: v["value"] for k, v in context.items() if v.get("value") is not None}
+
+
+def _extract_first_varname(expression: str | None) -> str | None:
+    """从表达式中粗略提取第一个变量名（用于定位触发点位）。"""
+    if not expression:
+        return None
+    import re
+    match = re.search(r"[a-zA-Z_][a-zA-Z0-9_]*", expression)
+    return match.group(0) if match else None
+
 def run_rule_tick() -> dict[str, int]:
     """
     执行一次 F2 规则 tick。
@@ -184,8 +223,26 @@ def run_rule_tick() -> dict[str, int]:
                             level = action.get("level", "WARNING")
                             message = action.get("message", f"rule {rule_id} triggered")
                             target_node_id = action.get("node_id")
+                            # 定位触发点位（简化格式：从 when 表达式提取第一个变量）
+                            when_expr = content.get("when", "") if isinstance(content, dict) else ""
+                            trigger_tag_name = _extract_first_varname(when_expr)
+                            trigger_ctx = context.get(trigger_tag_name) if trigger_tag_name else None
+                            trigger_tag_id = trigger_ctx.get("tag_id") if trigger_ctx else None
+                            trigger_value = trigger_ctx.get("value") if trigger_ctx else None
+                            effective_node_id = target_node_id
+                            if not effective_node_id and trigger_ctx:
+                                effective_node_id = trigger_ctx.get("node_id")
                             if not _has_active_alarm(cur, rule_id):
-                                _create_alarm(cur, rule_id, target_node_id, level, message)
+                                _create_alarm(
+                                    cur,
+                                    rule_id,
+                                    effective_node_id,
+                                    trigger_tag_id,
+                                    trigger_tag_name,
+                                    trigger_value,
+                                    level,
+                                    message,
+                                )
                                 result["alarms"] += 1
                         elif a_type == "control":
                             if _control_cooldown_ok(rule_id, action.get("cooldown", 60)):

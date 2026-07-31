@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchRules, createRule, updateRule, deleteRule, simulateRule,
@@ -7,6 +8,7 @@ import {
 // GoRules JDM Editor
 import '@gorules/jdm-editor/dist/style.css'
 import { DecisionGraph, JdmConfigProvider } from '@gorules/jdm-editor'
+import type { ThemeConfig } from '@gorules/jdm-editor'
 
 const TYPE_LABEL: Record<string, string> = {
   alarm: '告警',
@@ -28,36 +30,109 @@ const ENGINE_LABEL: Record<string, string> = {
   error: '错误',
 }
 
-const DEFAULT_JDM_GRAPH = {
+// OmniThings 主题适配：浅色 + 科技绿主色
+const JDM_THEME: ThemeConfig = {
+  mode: 'light',
+  token: {
+    colorPrimary: '#52c41a',
+    colorLink: '#389e0d',
+    colorSuccess: '#52c41a',
+    colorWarning: '#faad14',
+    colorError: '#f5222d',
+    colorInfo: '#1890ff',
+    borderRadius: 8,
+  },
+}
+
+const EXPRESSION_TEMPLATE = {
   nodes: [
-    {
-      id: 'input',
-      name: '输入',
-      type: 'inputNode',
-      position: { x: 80, y: 180 },
-    },
+    { id: 'input', name: '输入', type: 'inputNode', position: { x: 80, y: 180 } },
     {
       id: 'expression',
       name: '条件判断',
       type: 'expressionNode',
       position: { x: 360, y: 180 },
-      content: {
-        expressions: {
-          triggered: 'bms_current > -2000',
-        },
-      },
+      content: { expressions: { triggered: 'bms_current > -2000' } },
     },
-    {
-      id: 'output',
-      name: '输出',
-      type: 'outputNode',
-      position: { x: 680, y: 180 },
-    },
+    { id: 'output', name: '输出', type: 'outputNode', position: { x: 680, y: 180 } },
   ],
   edges: [
     { id: 'e1', sourceId: 'input', targetId: 'expression' },
     { id: 'e2', sourceId: 'expression', targetId: 'output' },
   ],
+}
+
+const DECISION_TABLE_TEMPLATE = {
+  nodes: [
+    { id: 'input', name: '输入', type: 'inputNode', position: { x: 60, y: 200 } },
+    {
+      id: 'table',
+      name: '电流分级告警',
+      type: 'decisionTableNode',
+      position: { x: 300, y: 120 },
+      content: {
+        hitPolicy: 'first',
+        inputs: [{ id: 'current', name: '电流', field: 'bms_current' }],
+        outputs: [
+          { id: 'triggered', name: '触发', field: 'triggered' },
+          { id: 'level', name: '级别', field: 'level' },
+          { id: 'message', name: '消息', field: 'message' },
+        ],
+        rules: [
+          { current: '< -3000', triggered: 'true', level: 'CRITICAL', message: '电流严重越下限' },
+          { current: '< -2000', triggered: 'true', level: 'MAJOR', message: '电流越下限' },
+          { current: '>= -2000', triggered: 'false', level: '', message: '' },
+        ],
+      },
+    },
+    { id: 'output', name: '输出', type: 'outputNode', position: { x: 720, y: 200 } },
+  ],
+  edges: [
+    { id: 'e1', sourceId: 'input', targetId: 'table' },
+    { id: 'e2', sourceId: 'table', targetId: 'output' },
+  ],
+}
+
+const MULTI_BRANCH_TEMPLATE = {
+  nodes: [
+    { id: 'input', name: '输入', type: 'inputNode', position: { x: 60, y: 200 } },
+    {
+      id: 'table',
+      name: '温湿度联合告警',
+      type: 'decisionTableNode',
+      position: { x: 300, y: 120 },
+      content: {
+        hitPolicy: 'first',
+        inputs: [
+          { id: 'temp', name: '温度', field: 'temperature' },
+          { id: 'humi', name: '湿度', field: 'humidity' },
+        ],
+        outputs: [
+          { id: 'triggered', name: '触发', field: 'triggered' },
+          { id: 'level', name: '级别', field: 'level' },
+          { id: 'message', name: '消息', field: 'message' },
+        ],
+        rules: [
+          { temp: '> 40', humi: '', triggered: 'true', level: 'CRITICAL', message: '温度过高' },
+          { temp: '', humi: '> 80', triggered: 'true', level: 'CRITICAL', message: '湿度过高' },
+          { temp: '> 35', humi: '', triggered: 'true', level: 'MAJOR', message: '温度偏高' },
+          { temp: '', humi: '> 70', triggered: 'true', level: 'MAJOR', message: '湿度偏高' },
+          { temp: '', humi: '', triggered: 'false', level: '', message: '' },
+        ],
+      },
+    },
+    { id: 'output', name: '输出', type: 'outputNode', position: { x: 720, y: 200 } },
+  ],
+  edges: [
+    { id: 'e1', sourceId: 'input', targetId: 'table' },
+    { id: 'e2', sourceId: 'table', targetId: 'output' },
+  ],
+}
+
+const TEMPLATES: Record<string, { label: string; graph: any }> = {
+  expression: { label: '表达式条件', graph: EXPRESSION_TEMPLATE },
+  decisionTable: { label: '决策表（分级告警）', graph: DECISION_TABLE_TEMPLATE },
+  multiBranch: { label: '多分支联合（温湿度）', graph: MULTI_BRANCH_TEMPLATE },
 }
 
 function isStandardJdm(content: any): boolean {
@@ -70,9 +145,15 @@ function summarizeRule(rule: Rule): string {
   if (c.when) return `when: ${c.when}`
   if (Array.isArray((c as any).nodes)) {
     const expr = (c as any).nodes.find((n: any) => n.type === 'expressionNode')
-    const exprs = expr?.content?.expressions
-    if (exprs) return `JDM: ${Object.entries(exprs).map(([k, v]) => `${k}=${v}`).join(', ')}`
-    return `JDM: ${c.nodes.length} 节点`
+    const table = (c as any).nodes.find((n: any) => n.type === 'decisionTableNode')
+    if (table) {
+      const outs = table.content?.outputs || []
+      return `JDM 决策表: ${outs.length ? outs.map((o: any) => o.name).join('/') : '未命名'} (${table.content?.rules?.length || 0} 规则)`
+    }
+    if (expr?.content?.expressions) {
+      return `JDM: ${Object.entries(expr.content.expressions).map(([k, v]) => `${k}=${v}`).join(', ')}`
+    }
+    return `JDM: ${(c as any).nodes.length} 节点`
   }
   return JSON.stringify(c).slice(0, 80)
 }
@@ -82,6 +163,7 @@ export default function RulesPanel() {
   const [loading, setLoading] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [createMode, setCreateMode] = useState<'simple' | 'jdm'>('simple')
+  const [templateKey, setTemplateKey] = useState('expression')
   const [simResult, setSimResult] = useState<Record<string, RuleSimulateResult>>({})
   const [editingJdm, setEditingJdm] = useState<string | null>(null)
 
@@ -91,7 +173,7 @@ export default function RulesPanel() {
   const [newWhen, setNewWhen] = useState('')
   const [newMessage, setNewMessage] = useState('')
   const [newLevel, setNewLevel] = useState('WARNING')
-  const [newJdmGraph, setNewJdmGraph] = useState<any>(DEFAULT_JDM_GRAPH)
+  const [newJdmGraph, setNewJdmGraph] = useState<any>(EXPRESSION_TEMPLATE)
   const [creating, setCreating] = useState(false)
 
   // 模拟输入
@@ -115,8 +197,13 @@ export default function RulesPanel() {
     setNewWhen('')
     setNewMessage('')
     setNewLevel('WARNING')
-    setNewJdmGraph(DEFAULT_JDM_GRAPH)
+    setNewJdmGraph(TEMPLATES[templateKey]?.graph || EXPRESSION_TEMPLATE)
     setShowCreate(false)
+  }
+
+  const applyTemplate = (key: string) => {
+    setTemplateKey(key)
+    setNewJdmGraph(TEMPLATES[key]?.graph || EXPRESSION_TEMPLATE)
   }
 
   const handleCreate = async () => {
@@ -298,14 +385,31 @@ export default function RulesPanel() {
               </div>
             </>
           ) : (
-            <div className="mb-3" style={{ height: 400 }}>
-              <label className="block text-xs text-gray-500 mb-1">GoRules JDM 决策图</label>
-              <JdmConfigProvider>
-                <DecisionGraph
-                  value={newJdmGraph as any}
-                  onChange={(val: any) => setNewJdmGraph(val)}
-                />
-              </JdmConfigProvider>
+            <div className="mb-3">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="text-xs text-gray-500">规则模板：</span>
+                {Object.entries(TEMPLATES).map(([key, tmpl]) => (
+                  <button
+                    key={key}
+                    onClick={() => applyTemplate(key)}
+                    className={`px-2 py-1 text-[11px] rounded ${
+                      templateKey === key
+                        ? 'bg-[#52c41a] text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {tmpl.label}
+                  </button>
+                ))}
+              </div>
+              <div className="rounded border border-gray-200 overflow-hidden" style={{ height: 460 }}>
+                <JdmConfigProvider theme={JDM_THEME}>
+                  <DecisionGraph
+                    value={newJdmGraph as any}
+                    onChange={(val: any) => setNewJdmGraph(val)}
+                  />
+                </JdmConfigProvider>
+              </div>
             </div>
           )}
 
@@ -413,7 +517,7 @@ export default function RulesPanel() {
 
       {editingJdm && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl h-[80vh] flex flex-col">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl h-[85vh] flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
               <span className="text-sm font-medium text-gray-700">编辑 JDM 决策图</span>
               <button
@@ -424,9 +528,9 @@ export default function RulesPanel() {
               </button>
             </div>
             <div className="flex-1 p-4 overflow-hidden">
-              <JdmConfigProvider>
+              <JdmConfigProvider theme={JDM_THEME}>
                 <DecisionGraph
-                  value={(rules.find((r) => r.id === editingJdm)?.jdm_content || DEFAULT_JDM_GRAPH) as any}
+                  value={(rules.find((r) => r.id === editingJdm)?.jdm_content || EXPRESSION_TEMPLATE) as any}
                   onChange={(val: any) => {
                     const rule = rules.find((r) => r.id === editingJdm)
                     if (!rule) return
@@ -441,4 +545,3 @@ export default function RulesPanel() {
     </div>
   )
 }
-

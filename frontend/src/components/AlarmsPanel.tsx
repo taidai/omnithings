@@ -125,6 +125,8 @@ export default function AlarmsPanel() {
               <th className="px-4 py-2.5 font-medium">时间</th>
               <th className="px-4 py-2.5 font-medium">级别</th>
               <th className="px-4 py-2.5 font-medium">规则</th>
+              <th className="px-4 py-2.5 font-medium">来源</th>
+              <th className="px-4 py-2.5 font-medium text-right">触发值</th>
               <th className="px-4 py-2.5 font-medium">消息</th>
               <th className="px-4 py-2.5 font-medium">状态</th>
               <th className="px-4 py-2.5 font-medium text-right">操作</th>
@@ -133,7 +135,7 @@ export default function AlarmsPanel() {
           <tbody>
             {alarms.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
                   {loading ? '加载中...' : '暂无告警'}
                 </td>
               </tr>
@@ -152,6 +154,12 @@ export default function AlarmsPanel() {
                   </span>
                 </td>
                 <td className="px-4 py-2.5 text-gray-600">{alarm.rule_name || '—'}</td>
+                <td className="px-4 py-2.5 text-gray-600 text-[11px]">
+                  {alarm.node_name ? `${alarm.node_name}${alarm.tag_name ? ` / ${alarm.tag_name}` : ''}` : '—'}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono text-gray-600 text-[11px]">
+                  {alarm.trigger_value !== null ? alarm.trigger_value.toFixed(4) : '—'}
+                </td>
                 <td className="px-4 py-2.5 text-gray-700">{alarm.message}</td>
                 <td className="px-4 py-2.5 whitespace-nowrap">
                   {alarm.acknowledged ? (

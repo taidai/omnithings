@@ -671,6 +671,10 @@ export interface Alarm {
   rule_id: string | null
   rule_name: string | null
   node_id: string | null
+  node_name: string | null
+  tag_id: string | null
+  tag_name: string | null
+  trigger_value: number | null
   level: string
   message: string
   acknowledged: boolean

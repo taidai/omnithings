@@ -201,16 +201,19 @@ COMMENT ON TABLE t_audit_log IS 'OmniThings 审计日志 - RPC操作/规则变�
 --  6. t_alarms: 告警表 (F2 / GoRules 输出)
 -- ══════════════════════════════════════
 CREATE TABLE IF NOT EXISTS t_alarms (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    rule_id     UUID REFERENCES t_rules(id),
-    node_id     UUID REFERENCES t_nodes(id),
-    level       TEXT NOT NULL CHECK (level IN ('INFO', 'WARNING', 'MAJOR', 'CRITICAL')),
-    message     TEXT NOT NULL,
-    acknowledged BOOLEAN DEFAULT FALSE,
-    ack_user    TEXT,
-    ack_at      TIMESTAMPTZ,
-    created_at  TIMESTAMPTZ DEFAULT now(),
-    resolved_at TIMESTAMPTZ
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rule_id         UUID REFERENCES t_rules(id),
+    node_id         UUID REFERENCES t_nodes(id),
+    tag_id          UUID REFERENCES t_tags(id),
+    trigger_tag_name TEXT,
+    trigger_value   DOUBLE PRECISION,
+    level           TEXT NOT NULL CHECK (level IN ('INFO', 'WARNING', 'MAJOR', 'CRITICAL')),
+    message         TEXT NOT NULL,
+    acknowledged    BOOLEAN DEFAULT FALSE,
+    ack_user        TEXT,
+    ack_at          TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    resolved_at     TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_alarms_active ON t_alarms(level, acknowledged) WHERE resolved_at IS NULL;
 
