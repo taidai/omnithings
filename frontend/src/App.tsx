@@ -9,6 +9,8 @@ import AdminPanel from './components/AdminPanel'
 import SnapshotTable from './components/SnapshotTable'
 import NeuronStatusCard from './components/NeuronStatusCard'
 import NodeTreeEditor from './components/NodeTreeEditor'
+import RulesPanel from './components/RulesPanel'
+import AlarmsPanel from './components/AlarmsPanel'
 
 // ── 管道状态条 ──
 function PipelineBar({ health }: { health: HealthStatus | null }) {
@@ -302,7 +304,7 @@ export default function App() {
   const [batchOffset, setBatchOffset] = useState('')
   const [batchSaving, setBatchSaving] = useState(false)
   const [showNeuronCard, setShowNeuronCard] = useState(false)
-  const [activeTab, setActiveTab] = useState<'tags' | 'tree' | 'snapshots' | 'admin'>('tags')
+  const [activeTab, setActiveTab] = useState<'tags' | 'tree' | 'snapshots' | 'admin' | 'rules' | 'alarms'>('tags')
   const pageSize = 50
 
   // 加载节点列表
@@ -405,7 +407,7 @@ export default function App() {
         {/* 页面标题 + Tab 切换 */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-xl font-bold text-gray-800">OmniThings F0</h1>
+            <h1 className="text-xl font-bold text-gray-800">OmniThings</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -439,6 +441,18 @@ export default function App() {
               }`}
             >
               开发者工具
+            </button>
+            <button
+              onClick={() => setActiveTab('rules')}
+              className={activeTab === 'rules' ? 'px-4 py-1.5 text-xs font-medium rounded-full transition-colors bg-[#52c41a] text-white' : 'px-4 py-1.5 text-xs font-medium rounded-full transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200'}
+            >
+              规则引擎
+            </button>
+            <button
+              onClick={() => setActiveTab('alarms')}
+              className={activeTab === 'alarms' ? 'px-4 py-1.5 text-xs font-medium rounded-full transition-colors bg-[#52c41a] text-white' : 'px-4 py-1.5 text-xs font-medium rounded-full transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200'}
+            >
+              告警中心
             </button>
           </div>
         </div>
@@ -624,6 +638,10 @@ export default function App() {
           <NodeTreeEditor />
         ) : activeTab === 'snapshots' ? (
           <SnapshotTable />
+        ) : activeTab === 'rules' ? (
+          <RulesPanel />
+        ) : activeTab === 'alarms' ? (
+          <AlarmsPanel />
         ) : (
           <AdminPanel />
         )}

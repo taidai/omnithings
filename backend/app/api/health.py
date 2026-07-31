@@ -35,7 +35,7 @@ async def health_check() -> dict:
     Returns:
         {
             "status": "ok" | "degraded",
-            "version": "0.3.0",
+            "version": "0.4.0",
             "uptime_seconds": float,
             "components": { timescaledb, mqtt, pipeline },
             "pipeline": { messages_received, points_written_db, ... }
@@ -104,7 +104,7 @@ async def health_check() -> dict:
 
     return {
         "status": overall,
-        "version": "0.3.0",
+        "version": "0.4.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime_seconds": round(time.monotonic() - _start_time, 2),
         "components": {
