@@ -4,113 +4,26 @@ F2 规则引擎 — 告警/控制/联动策略
 职责：
   - 每 tick 扫描启用的 t_rules
   - 从 t_telemetry_latest 构建上下文（tag_name -> value）
-  - 对每条规则求值 when 条件
+  - 对每条规则通过 GoRules zen-engine 求值
   - 触发动作：
-      alarm     → 写入 t_alarms（同一规则未恢复时不再重复创建）
-      control   → 经 MQTT 发布控制命令 + 写入 t_audit_log
-      linkage   → 更新指定虚拟点位的 sources 或触发另一规则（MVP 未实现）
+      alarm     -> 写入 t_alarms（同一规则未恢复时不再重复创建）
+      control   -> 经 MQTT 发布控制命令 + 写入 t_audit_log
+      linkage   -> 更新指定虚拟点位的 sources 或触发另一规则（MVP 未实现）
 
-条件语法：
-  - 使用 tag_name 作为变量，如 `bms_current > -1000`
-  - 支持 + - * / // % ** 、比较、and/or/not
-  - 安全 AST 求值，禁止函数调用和未声明变量
+求值层：
+  - 优先使用 GoRules zen-engine（import zen）
+  - zen-engine 不可用时自动 fallback 到安全 AST 求值器
+  - 兼容简化格式 {when, actions} 和标准 JDM {nodes, edges, actions}
 """
 from __future__ import annotations
 
-import ast
 import json
-import operator
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from uuid import UUID
 
 from loguru import logger
 
-# 允许的二元/比较/一元运算符
-_ALLOWED_BIN_OPS = {
-    ast.Add: operator.add,
-    ast.Sub: operator.sub,
-    ast.Mult: operator.mul,
-    ast.Div: operator.truediv,
-    ast.FloorDiv: operator.floordiv,
-    ast.Mod: operator.mod,
-    ast.Pow: operator.pow,
-}
-_ALLOWED_COMP_OPS = {
-    ast.Eq: operator.eq,
-    ast.NotEq: operator.ne,
-    ast.Lt: operator.lt,
-    ast.LtE: operator.le,
-    ast.Gt: operator.gt,
-    ast.GtE: operator.ge,
-}
-_ALLOWED_UNARY_OPS = {
-    ast.UAdd: operator.pos,
-    ast.USub: operator.neg,
-    ast.Not: operator.not_,
-}
-
-
-def _eval_condition(condition: str, context: dict[str, float | bool | int | str]) -> bool:
-    """
-    安全求值 when 条件，返回布尔结果。
-
-    未声明的变量 / 非法节点都会抛 ValueError，视为 False 并记录日志。
-    """
-    tree = ast.parse(condition, mode='eval')
-    return bool(_eval_node(tree.body, context))
-
-
-def _eval_node(node: ast.AST, ctx: dict) -> float | bool | int | str:
-    if isinstance(node, ast.Expression):
-        return _eval_node(node.body, ctx)
-
-    if isinstance(node, ast.Constant):
-        if isinstance(node.value, (int, float, bool, str)):
-            return node.value
-        raise ValueError(f"unsupported constant type: {type(node.value)}")
-
-    if isinstance(node, ast.Num):  # py<3.8
-        return node.n
-
-    if isinstance(node, ast.Name):
-        if node.id not in ctx:
-            raise ValueError(f"unknown variable: {node.id}")
-        return ctx[node.id]
-
-    if isinstance(node, ast.BinOp):
-        op_type = type(node.op)
-        if op_type not in _ALLOWED_BIN_OPS:
-            raise ValueError(f"disallowed binary operator: {op_type.__name__}")
-        left = _eval_node(node.left, ctx)
-        right = _eval_node(node.right, ctx)
-        return _ALLOWED_BIN_OPS[op_type](left, right)
-
-    if isinstance(node, ast.UnaryOp):
-        op_type = type(node.op)
-        if op_type not in _ALLOWED_UNARY_OPS:
-            raise ValueError(f"disallowed unary operator: {op_type.__name__}")
-        operand = _eval_node(node.operand, ctx)
-        return _ALLOWED_UNARY_OPS[op_type](operand)
-
-    if isinstance(node, ast.Compare):
-        left = _eval_node(node.left, ctx)
-        if len(node.ops) != 1 or len(node.comparators) != 1:
-            raise ValueError("chained comparisons not supported")
-        op_type = type(node.ops[0])
-        if op_type not in _ALLOWED_COMP_OPS:
-            raise ValueError(f"disallowed comparison operator: {op_type.__name__}")
-        right = _eval_node(node.comparators[0], ctx)
-        return _ALLOWED_COMP_OPS[op_type](left, right)
-
-    if isinstance(node, ast.BoolOp):
-        op_type = type(node.op)
-        if op_type is ast.And:
-            return all(_eval_node(v, ctx) for v in node.values)
-        if op_type is ast.Or:
-            return any(_eval_node(v, ctx) for v in node.values)
-        raise ValueError(f"disallowed bool operator: {op_type.__name__}")
-
-    raise ValueError(f"unsupported AST node: {type(node).__name__}")
+from app.services.gorules_adapter import evaluate_rule
 
 
 def _build_context(cur) -> dict[str, float | bool | int | str]:
@@ -127,7 +40,6 @@ def _build_context(cur) -> dict[str, float | bool | int | str]:
         if value_bool is not None:
             ctx[name] = value_bool
         elif value_str is not None:
-            # 尝试将文本转为 bool/数字；失败保持原字符串
             if value_str.lower() in ("true", "false"):
                 ctx[name] = value_str.lower() == "true"
             else:
@@ -146,9 +58,12 @@ def _build_context(cur) -> dict[str, float | bool | int | str]:
 
 
 def _has_active_alarm(cur, rule_id: UUID) -> bool:
-    """检查指定规则是否存在未恢复（resolved_at IS NULL）且未全部确认的活动告警。"""
     cur.execute(
-        "SELECT 1 FROM t_alarms WHERE rule_id = %s AND resolved_at IS NULL LIMIT 1",
+        """
+        SELECT 1 FROM t_alarms
+        WHERE rule_id = %s AND resolved_at IS NULL
+        LIMIT 1
+        """,
         (rule_id,),
     )
     return cur.fetchone() is not None
@@ -249,15 +164,20 @@ def run_rule_tick() -> dict[str, int]:
                 result["evaluated"] += 1
                 try:
                     content = jdm_content if isinstance(jdm_content, dict) else json.loads(jdm_content)
-                    when = content.get("when")
-                    actions = content.get("actions", [])
-                    if not when or not actions:
+                    eval_result = evaluate_rule(content, context)
+
+                    if eval_result.get("error"):
+                        logger.warning(
+                            "[RuleEngine] rule {} evaluation error ({}): {}",
+                            rule_id,
+                            eval_result.get("engine"),
+                            eval_result["error"],
+                        )
+
+                    if not eval_result.get("triggered"):
                         continue
 
-                    triggered = _eval_condition(when, context)
-                    if not triggered:
-                        continue
-
+                    actions = eval_result.get("actions", [])
                     for action in actions:
                         a_type = action.get("type")
                         if a_type == "alarm":

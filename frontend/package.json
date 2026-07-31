@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@gorules/jdm-editor": "^1.52.0",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
     "react": "^18.3.1",

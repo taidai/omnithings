@@ -1,12 +1,12 @@
 """
 F2 Rules API — 规则管理
 
-POST   /api/v1/rules              → 创建规则
-GET    /api/v1/rules              → 规则列表
-GET    /api/v1/rules/{id}/jdm      → 获取 JDM 内容
-PUT    /api/v1/rules/{id}/jdm      → 更新 JDM 内容（热更新）
-DELETE /api/v1/rules/{id}           → 删除规则
-POST   /api/v1/rules/{id}/simulate → 模拟规则（给定上下文，看是否触发/动作）
+POST   /api/v1/rules              -> 创建规则
+GET    /api/v1/rules              -> 规则列表
+GET    /api/v1/rules/{id}/jdm     -> 获取 JDM 内容
+PUT    /api/v1/rules/{id}/jdm     -> 更新 JDM 内容（热更新）
+DELETE /api/v1/rules/{id}          -> 删除规则
+POST   /api/v1/rules/{id}/simulate -> 模拟规则（给定上下文，看是否触发/动作）
 """
 from __future__ import annotations
 
@@ -17,20 +17,20 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.services.rule_engine import _eval_condition
+from app.services.gorules_adapter import evaluate_rule
 
 router = APIRouter()
 
 
 class RuleCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, description="规则名（唯一）")
-    rule_type: str = Field(..., pattern="^(alarm|control|linkage)$", description="规则类型")
-    jdm_content: dict = Field(..., description="规则 JDM 内容 {when: str, actions: list}")
+    rule_type: str = Field(..., pattern="^(alarm|control|linkage|fault_map)$", description="规则类型")
+    jdm_content: dict = Field(..., description="规则 JDM 内容 {when: str, actions: list} 或标准 GoRules JDM")
     enabled: bool = Field(True, description="是否启用")
 
 
 class RuleUpdateRequest(BaseModel):
-    jdm_content: dict = Field(..., description="规则 JDM 内容")
+    jdm_content: dict | None = Field(None, description="规则 JDM 内容")
     enabled: bool | None = Field(None, description="是否启用")
 
 
@@ -184,18 +184,20 @@ async def simulate_rule(rule_id: UUID, req: RuleSimulateRequest) -> dict:
 
     rule_type, jdm = row
     content = jdm if isinstance(jdm, dict) else json.loads(jdm)
-    when = content.get("when", "")
+    when = content.get("when", "") if isinstance(content, dict) else ""
 
-    try:
-        triggered = _eval_condition(when, req.context)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Evaluation failed: {e}")
+    eval_result = evaluate_rule(content, req.context)
+
+    if eval_result.get("error"):
+        raise HTTPException(status_code=400, detail=f"Evaluation failed: {eval_result['error']}")
 
     return {
         "rule_id": str(rule_id),
         "rule_type": rule_type,
         "when": when,
         "context": req.context,
-        "triggered": triggered,
-        "actions": content.get("actions", []),
+        "triggered": eval_result["triggered"],
+        "actions": eval_result["actions"],
+        "outputs": eval_result.get("outputs", {}),
+        "engine": eval_result.get("engine", "unknown"),
     }

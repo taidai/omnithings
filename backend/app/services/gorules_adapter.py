@@ -1,0 +1,250 @@
+"""
+GoRules zen-engine 适配器 (F2 规则引擎)
+
+职责：
+  - 统一封装 GoRules zen-engine 的规则求值。
+  - 当 zen-engine 不可用时，fallback 到原有安全 AST 求值器，保证系统可运行。
+  - 同时兼容两类 jdm_content：
+    1) 简化格式：{"when": "...", "actions": [...]}
+    2) 标准 GoRules JDM：{"nodes": [...], "edges": [...], "actions": [...]}
+
+注意：
+  - e606 容器内 zen-engine 0.53.0 的 Python 包名为 ``zen``，不是 ``zen_engine``。
+  - 核心 API：``zen.evaluate_expression(expr, ctx)`` / ``zen.compile_expression(expr)``。
+  - 标准 JDM 使用 ``zen.ZenEngine().create_decision(jdm).evaluate(ctx)``。
+"""
+from __future__ import annotations
+
+import ast
+import operator
+from typing import Any
+
+from loguru import logger
+
+# -- 尝试加载 GoRules zen-engine --
+try:
+    import zen as _zen  # noqa: N812
+
+    _ZEN_AVAILABLE = True
+    logger.info("[GoRules] zen-engine {} loaded", getattr(_zen, "__version__", "unknown"))
+except Exception as _zen_err:  # pragma: no cover - 未安装时的 fallback
+    _zen = None  # type: ignore[assignment]
+    _ZEN_AVAILABLE = False
+    logger.warning("[GoRules] zen-engine not available, fallback to AST evaluator: {}", _zen_err)
+
+
+# ================================================================
+# Fallback：原有安全 AST 求值器
+# ================================================================
+
+_ALLOWED_BIN_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+_ALLOWED_COMP_OPS = {
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+}
+_ALLOWED_UNARY_OPS = {
+    ast.UAdd: operator.pos,
+    ast.USub: operator.neg,
+    ast.Not: operator.not_,
+}
+
+
+def _eval_node(node: ast.AST, ctx: dict) -> float | bool | int | str:
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body, ctx)
+
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, (int, float, bool, str)):
+            return node.value
+        raise ValueError(f"unsupported constant type: {type(node.value)}")
+
+    if isinstance(node, ast.Num):  # py<3.8
+        return node.n
+
+    if isinstance(node, ast.Name):
+        if node.id not in ctx:
+            raise ValueError(f"unknown variable: {node.id}")
+        return ctx[node.id]
+
+    if isinstance(node, ast.BinOp):
+        op_type = type(node.op)
+        if op_type not in _ALLOWED_BIN_OPS:
+            raise ValueError(f"disallowed binary operator: {op_type.__name__}")
+        left = _eval_node(node.left, ctx)
+        right = _eval_node(node.right, ctx)
+        return _ALLOWED_BIN_OPS[op_type](left, right)
+
+    if isinstance(node, ast.UnaryOp):
+        op_type = type(node.op)
+        if op_type not in _ALLOWED_UNARY_OPS:
+            raise ValueError(f"disallowed unary operator: {op_type.__name__}")
+        operand = _eval_node(node.operand, ctx)
+        return _ALLOWED_UNARY_OPS[op_type](operand)
+
+    if isinstance(node, ast.Compare):
+        left = _eval_node(node.left, ctx)
+        if len(node.ops) != 1 or len(node.comparators) != 1:
+            raise ValueError("chained comparisons not supported")
+        op_type = type(node.ops[0])
+        if op_type not in _ALLOWED_COMP_OPS:
+            raise ValueError(f"disallowed comparison operator: {op_type.__name__}")
+        right = _eval_node(node.comparators[0], ctx)
+        return _ALLOWED_COMP_OPS[op_type](left, right)
+
+    if isinstance(node, ast.BoolOp):
+        op_type = type(node.op)
+        if op_type is ast.And:
+            return all(_eval_node(v, ctx) for v in node.values)
+        if op_type is ast.Or:
+            return any(_eval_node(v, ctx) for v in node.values)
+        raise ValueError(f"disallowed bool operator: {op_type.__name__}")
+
+    raise ValueError(f"unsupported AST node: {type(node).__name__}")
+
+
+def _eval_condition_ast(condition: str, context: dict[str, Any]) -> bool:
+    """安全 AST 求值（fallback 用）。"""
+    tree = ast.parse(condition, mode="eval")
+    return bool(_eval_node(tree.body, context))
+
+
+# ================================================================
+# GoRules 适配器
+# ================================================================
+
+def _is_standard_jdm(content: dict) -> bool:
+    """判断是否为标准 GoRules JDM（含 nodes 字段）。"""
+    return isinstance(content, dict) and "nodes" in content and isinstance(content["nodes"], list)
+
+
+def _extract_triggered(outputs: Any) -> bool:
+    """从 zen-engine 输出中提取是否触发。"""
+    if isinstance(outputs, dict):
+        if outputs.get("triggered") is not None:
+            return bool(outputs["triggered"])
+        if outputs.get("result") is not None:
+            return bool(outputs["result"])
+        return any(bool(v) for v in outputs.values())
+    return bool(outputs)
+
+
+def _evaluate_expression_zen(expression: str, context: dict[str, Any]) -> bool:
+    """使用 zen-engine 求值布尔表达式。"""
+    if _zen is None:
+        raise RuntimeError("zen-engine not available")
+    result = _zen.evaluate_expression(expression, context)
+    return bool(result)
+
+
+def _evaluate_jdm_zen(jdm_content: dict, context: dict[str, Any]) -> dict:
+    """使用 zen-engine 评估标准 JDM 决策图/决策表。"""
+    if _zen is None:
+        raise RuntimeError("zen-engine not available")
+    engine = _zen.ZenEngine()
+    decision = engine.create_decision(jdm_content)
+    outputs = decision.evaluate(context)
+    return outputs if isinstance(outputs, dict) else {"result": outputs}
+
+
+def evaluate_rule(jdm_content: dict, context: dict[str, Any]) -> dict:
+    """
+    统一规则求值入口。
+
+    Returns:
+        {
+            "triggered": bool,
+            "actions": list[dict],
+            "outputs": dict,
+            "error": str | None,
+            "engine": "zen" | "ast" | "error",
+        }
+    """
+    if not isinstance(jdm_content, dict):
+        return {
+            "triggered": False,
+            "actions": [],
+            "outputs": {},
+            "error": "jdm_content must be a dict",
+            "engine": "error",
+        }
+
+    # -- 标准 GoRules JDM --
+    if _is_standard_jdm(jdm_content):
+        if not _ZEN_AVAILABLE:
+            return {
+                "triggered": False,
+                "actions": [],
+                "outputs": {},
+                "error": "standard JDM requires zen-engine, which is not installed",
+                "engine": "error",
+            }
+        try:
+            outputs = _evaluate_jdm_zen(jdm_content, context)
+            triggered = _extract_triggered(outputs)
+            actions = jdm_content.get("actions", []) if triggered else []
+            return {
+                "triggered": triggered,
+                "actions": actions,
+                "outputs": outputs,
+                "error": None,
+                "engine": "zen",
+            }
+        except Exception as e:
+            logger.warning("[GoRules] JDM evaluation failed: {}", e)
+            return {
+                "triggered": False,
+                "actions": [],
+                "outputs": {},
+                "error": str(e),
+                "engine": "error",
+            }
+
+    # -- 简化格式 {when, actions} --
+    when = jdm_content.get("when")
+    actions = jdm_content.get("actions", [])
+
+    if not when:
+        return {
+            "triggered": False,
+            "actions": [],
+            "outputs": {},
+            "error": None,
+            "engine": "zen" if _ZEN_AVAILABLE else "ast",
+        }
+
+    engine_used = "zen" if _ZEN_AVAILABLE else "ast"
+
+    try:
+        if _ZEN_AVAILABLE:
+            triggered = _evaluate_expression_zen(when, context)
+        else:
+            triggered = _eval_condition_ast(when, context)
+    except Exception as e:
+        logger.warning("[GoRules] expression evaluation failed ({}): {}", engine_used, e)
+        return {
+            "triggered": False,
+            "actions": [],
+            "outputs": {},
+            "error": str(e),
+            "engine": engine_used,
+        }
+
+    return {
+        "triggered": bool(triggered),
+        "actions": actions if triggered else [],
+        "outputs": {"triggered": triggered},
+        "error": None,
+        "engine": engine_used,
+    }

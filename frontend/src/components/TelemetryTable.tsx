@@ -1,8 +1,11 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import {
   fetchNodes, fetchTags, fetchTelemetry, exportTelemetryCsv,
   type Node, type Tag, type TelemetryPoint,
 } from '../api/client'
+
+const formatNum = (v: number | null, digits = 4) =>
+  v !== null ? v.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: digits }) : '—'
 
 export default function TelemetryTable() {
   const [nodes, setNodes] = useState<Node[]>([])
@@ -21,7 +24,6 @@ export default function TelemetryTable() {
     fetchNodes().then((n) => setNodes(n.filter((node) => node.layer >= 3)))
   }, [])
 
-  // 选中节点后加载该节点点位
   useEffect(() => {
     if (!selectedNode) {
       setTags([])
@@ -35,7 +37,15 @@ export default function TelemetryTable() {
     setLoading(true)
     try {
       const data = await fetchTelemetry(selectedTag || undefined, range, page, pageSize)
-      setPoints(data.points)
+      // 按 tag_id + ts 去重，保留第一条
+      const seen = new Set<string>()
+      const deduped = data.points.filter((p) => {
+        const key = `${p.tag_id}|${p.ts}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      setPoints(deduped)
       setTotal(data.total)
       setTotalPages(data.total_pages || 1)
     } finally {
@@ -45,11 +55,14 @@ export default function TelemetryTable() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // 选中节点时重置点位选择
   useEffect(() => {
     setSelectedTag('')
     setPage(1)
   }, [selectedNode])
+
+  const selectedTagUnit = useMemo(() => {
+    return tags.find((t) => t.id === selectedTag)?.unit || ''
+  }, [tags, selectedTag])
 
   return (
     <div>
@@ -79,7 +92,7 @@ export default function TelemetryTable() {
           >
             <option value="">全部点位</option>
             {tags.map((t) => (
-              <option key={t.id} value={t.id}>{t.display_name || t.name}</option>
+              <option key={t.id} value={t.id}>{t.display_name || t.name}{t.unit ? ` (${t.unit})` : ''}</option>
             ))}
           </select>
         </div>
@@ -115,7 +128,7 @@ export default function TelemetryTable() {
         </button>
 
         <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
-          <span>共 {total} 条</span>
+          <span>共 {total} 条{points.length !== total ? ` / 本页去重后 ${points.length} 条` : ''}</span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -146,23 +159,23 @@ export default function TelemetryTable() {
                 <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">节点</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">点位</th>
                 <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">原始值</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">工程值</th>
+                <th className="text-right px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">工程值 {selectedTagUnit ? `(${selectedTagUnit})` : ''}</th>
                 <th className="text-center px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">Quality</th>
               </tr>
             </thead>
             <tbody>
-              {points.map((p, i) => (
-                <tr key={`${p.tag_id}-${p.ts}-${i}`} className="border-b border-gray-100 hover:bg-white/30">
+              {points.map((p) => (
+                <tr key={`${p.tag_id}-${p.ts}`} className="border-b border-gray-100 hover:bg-white/30">
                   <td className="px-3 py-2 text-gray-600 font-mono text-[11px]">
                     {new Date(p.ts).toLocaleString('zh-CN', { hour12: false })}
                   </td>
                   <td className="px-3 py-2 text-gray-600">{p.node_name}</td>
                   <td className="px-3 py-2 text-gray-800 font-medium">{p.tag_name}</td>
                   <td className="px-3 py-2 text-right font-mono-value">
-                    {p.raw_value !== null ? p.raw_value.toFixed(4) : '—'}
+                    {formatNum(p.raw_value)}
                   </td>
                   <td className="px-3 py-2 text-right font-mono-value text-[#389e0d]">
-                    {p.eng_value !== null ? p.eng_value.toFixed(4) : '—'}
+                    {formatNum(p.eng_value)}
                   </td>
                   <td className="px-3 py-2 text-center">
                     <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${

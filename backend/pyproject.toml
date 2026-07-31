@@ -30,7 +30,7 @@ dependencies = [
     "paho-mqtt>=2.1.0",           # MQTT 客户端 (M2 接入层)
 
     # --- 规则引擎 ---
-    "zen-engine>=0.4.5",          # GoRules ZEN 引擎 (M6)
+    "zen-engine>=0.53.0",          # GoRules ZEN 引擎 (M6)
 
     # --- 控制 ---
     "httpx>=0.27.0",              # 异步 HTTP (M7 RPC Neuron REST API)
@@ -49,3 +49,4 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+

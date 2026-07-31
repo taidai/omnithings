@@ -103,7 +103,7 @@ export default function SnapshotTable() {
         </button>
 
         <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
-          <span>共 {total} 条</span>
+          <span>共 {total} 条{snapshots.length !== total ? ` / 本页去重后 ${snapshots.length} 条` : ''}</span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}

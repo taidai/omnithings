@@ -8,6 +8,8 @@ const LEVEL_STYLE: Record<string, string> = {
   CRITICAL: 'bg-red-100 text-red-600',
 }
 
+const LEVEL_ORDER = ['CRITICAL', 'MAJOR', 'WARNING', 'INFO']
+
 export default function AlarmsPanel() {
   const [alarms, setAlarms] = useState<Alarm[]>([])
   const [total, setTotal] = useState(0)
@@ -24,7 +26,15 @@ export default function AlarmsPanel() {
         acknowledged: ackFilter === '' ? undefined : ackFilter === 'ack',
         limit: 100,
       })
-      setAlarms(data.alarms)
+      // 未确认优先，同级别按时间倒序
+      const sorted = [...data.alarms].sort((a, b) => {
+        if (a.acknowledged !== b.acknowledged) return a.acknowledged ? 1 : -1
+        const la = LEVEL_ORDER.indexOf(a.level)
+        const lb = LEVEL_ORDER.indexOf(b.level)
+        if (la !== lb) return (la < 0 ? 99 : la) - (lb < 0 ? 99 : lb)
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      })
+      setAlarms(sorted)
       setTotal(data.total)
     } catch (e) {
       console.error(e)
@@ -47,6 +57,23 @@ export default function AlarmsPanel() {
       alert(`确认失败: ${e.message}`)
     } finally {
       setAcking(null)
+    }
+  }
+
+  const ackAllVisible = async () => {
+    const unack = alarms.filter((a) => !a.acknowledged)
+    if (!unack.length) return
+    const user = prompt(`批量确认 ${unack.length} 条告警，确认人：`, localStorage.getItem('ack_user') || 'admin')
+    if (!user) return
+    localStorage.setItem('ack_user', user)
+    setLoading(true)
+    try {
+      await Promise.all(unack.map((a) => ackAlarm(a.id, user)))
+      await load()
+    } catch (e: any) {
+      alert(`批量确认失败: ${e.message}`)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -78,9 +105,16 @@ export default function AlarmsPanel() {
         <button
           onClick={load}
           disabled={loading}
-          className="neu-btn px-4 py-1.5 text-xs font-medium text-gray-600 hover:text-[#389e0d] disabled:opacity-50 ml-auto"
+          className="neu-btn px-4 py-1.5 text-xs font-medium text-gray-600 hover:text-[#389e0d] disabled:opacity-50"
         >
           {loading ? '加载中...' : '刷新'}
+        </button>
+        <button
+          onClick={ackAllVisible}
+          disabled={loading || !alarms.some((a) => !a.acknowledged)}
+          className="neu-btn px-4 py-1.5 text-xs font-medium text-white bg-[#52c41a] hover:bg-[#389e0d] disabled:opacity-50"
+        >
+          批量确认
         </button>
       </div>
 
@@ -105,7 +139,10 @@ export default function AlarmsPanel() {
               </tr>
             )}
             {alarms.map((alarm) => (
-              <tr key={alarm.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+              <tr
+                key={alarm.id}
+                className={`border-b border-gray-50 hover:bg-gray-50/50 ${alarm.acknowledged ? 'opacity-60' : ''}`}
+              >
                 <td className="px-4 py-2.5 font-mono text-gray-500 whitespace-nowrap">
                   {alarm.created_at ? new Date(alarm.created_at).toLocaleString() : '—'}
                 </td>
@@ -116,11 +153,14 @@ export default function AlarmsPanel() {
                 </td>
                 <td className="px-4 py-2.5 text-gray-600">{alarm.rule_name || '—'}</td>
                 <td className="px-4 py-2.5 text-gray-700">{alarm.message}</td>
-                <td className="px-4 py-2.5">
+                <td className="px-4 py-2.5 whitespace-nowrap">
                   {alarm.acknowledged ? (
                     <span className="text-[#389e0d]">已确认{alarm.ack_user ? ` · ${alarm.ack_user}` : ''}</span>
                   ) : (
-                    <span className="text-red-500">未确认</span>
+                    <span className="inline-flex items-center gap-1 text-red-500 font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                      未确认
+                    </span>
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-right">

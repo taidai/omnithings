@@ -588,7 +588,7 @@ export interface Rule {
   id: string
   name: string
   rule_type: 'alarm' | 'control' | 'linkage'
-  jdm_content: { when?: string; actions?: any[] }
+  jdm_content: any
   enabled: boolean
   created_at: string | null
 }
@@ -596,7 +596,7 @@ export interface Rule {
 export interface RuleCreateInput {
   name: string
   rule_type: string
-  jdm_content: { when: string; actions: any[] }
+  jdm_content: any
   enabled?: boolean
 }
 
@@ -647,6 +647,8 @@ export interface RuleSimulateResult {
   context: Record<string, any>
   triggered: boolean
   actions: any[]
+  outputs?: Record<string, any>
+  engine?: string
 }
 
 export async function simulateRule(ruleId: string, context: Record<string, any>): Promise<RuleSimulateResult> {
@@ -707,3 +709,6 @@ export async function ackAlarm(alarmId: string, ackUser: string): Promise<void> 
     throw new Error(err.detail || `Ack alarm failed: ${res.status}`)
   }
 }
+
+
+

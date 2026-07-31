@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -700,7 +700,7 @@ class TagCreateRequest(BaseModel):
     sources: list[str] = Field(default_factory=list, description="来源点位 UUID 列表")
 
 
-@router.post("/tags")
+@router.post("/tags", status_code=status.HTTP_201_CREATED)
 async def create_tag(req: TagCreateRequest) -> dict:
     """
     创建点位并挂载到指定节点。

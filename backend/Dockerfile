@@ -52,6 +52,7 @@ RUN pip install --no-cache-dir \
         pydantic-settings \
         pint \
         websockets \
+        zen-engine \
         httpx \
         "apscheduler[asyncio,timezone]>=3.10.4" \
         "pyyaml>=6.0.2"
