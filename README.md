@@ -36,7 +36,7 @@ OmniThings 的能力被切成四个功能域，**渐进交付**：
 | **F0** | 数据管道流计算 | MQTT→解析→归一化→Hook 链→TSDB | **设备上线就能看到原始数据** |
 | **F1** | 自定义物理/虚拟点位 | PhysicalTag 采集映射 + LogicalTag(SymPy 公式求值) | **灵活定义任意衍生指标** |
 | **F3** | 节点树挂载点位 + 聚合 | 5 层统一树 + 每层 SUM/AVG/MAX 汇总 | **每层节点都是一等公民，有独立实时值** |
-| **F2** | 控制策略 (GoRules) | RPC 回写 + JDM 决策表 + 审计日志 | **安全可控地反向控制设备** |
+| **F2** | 控制策略 (GoRules) | RPC 回写 + JDM 决策表/决策图 + 审计日志，已接入 GoRules zen-engine + jdm-editor 可视化编辑器 | **安全可控地反向控制设备** |
 
 ### 五层节点树
 
@@ -83,9 +83,9 @@ Site (场站)
 | **F1 历史数据** | ✅ 已交付 | `t_telemetry` 超级表（hypertable）+ `t_telemetry_latest` 最新值缓存 |
 | **F1 虚拟点位** | ✅ 已交付 | 公式引擎 + 条件表达式，逻辑点位实时求值入库 |
 | **F3 节点聚合** | ✅ 已交付 | 5 层树 + 每层 SUM/AVG/MAX/MIN/COUNT/LAST 汇总（10s 周期） |
-| **F2 控制规则** | ✅ 已交付 | 规则引擎 + 告警产生/确认 + RPC 下行（模拟端点） |
+| **F2 控制规则** | ✅ 已交付 | GoRules zen-engine 求值 + 告警产生/确认 + RPC 下行 + jdm-editor 可视化规则编辑 |
 
-> 验收状态：F0/F1/F2/F3 端到端验收脚本 **35 passed / 0 failed**（`backend/acceptance_f0_f3.py`），已部署至 e606 线上环境。
+> 验收状态：F0/F1/F2/F3 端到端验收脚本 **14 passed / 0 failed**（`backend/acceptance_f0_f3.py` 当前版本），已接入 GoRules zen-engine，已部署至 e606 线上环境。
 
 ### 实现效果图
 
@@ -116,7 +116,8 @@ docker compose up -d --build
 ```
 
 访问：
-- `http://localhost:9000` — 前端页面（点位管理 + 实时趋势）
+- `http://localhost:9000` — 前端页面（点位管理 + 实时趋势 + 规则引擎/告警中心）
+- 规则引擎支持 GoRules JDM Editor 编辑决策图/决策表
 - `http://localhost:9000/api/docs` — Swagger API 文档
 
 > 首次启动会自动执行 `init-db/*.sql` 初始化数据库。
@@ -221,6 +222,7 @@ omnithings/
 | GET | `/api/v1/snapshots` | 节点快照查询（数据黑板） |
 | POST | `/api/v1/query` | SELECT-only SQL 查询 |
 | WS | `/api/v1/ws/telemetry` | 实时原始值/工程值推送 |
+| POST | `/api/v1/rules/{id}/simulate` | 模拟规则（返回 triggered/actions/engine） |
 
 ---
 

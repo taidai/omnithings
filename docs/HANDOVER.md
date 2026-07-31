@@ -9,7 +9,7 @@
 
 **OmniThings**（内部代号 Claw）是 OmniPower 工业物联网数据采集与入库平台。
 
-- 当前阶段：**F0 / F1 / F2 / F3 全部验收通过（验收脚本 35 passed, 0 failed），并已部署到 e606**
+- 当前阶段：**F0 / F1 / F2 / F3 全部验收通过（验收脚本 14 passed, 0 failed），已接入 GoRules zen-engine，并已部署到 e606**
 - 核心目标：通过 Neuron 工业协议网关采集设备数据，经 NanoMQ 总线，由 FastAPI 后端解析、归一化、写入 TimescaleDB，并提供前端管理界面。
 - 线上环境：http://e606.hlszh.com:9000/
 
@@ -41,7 +41,7 @@ C:\Users\chent\Desktop\2026成果\easyway\Claw\
 | 层级 | 技术 |
 |------|------|
 | 前端 | React 18 + TypeScript + Vite + TailwindCSS |
-| 后端 | FastAPI + Python 3.12 |
+| 后端 | FastAPI + Python 3.12 + GoRules zen-engine (JDM 规则引擎) |
 | 数据库 | PostgreSQL 16 + TimescaleDB 2.x |
 | 消息总线 | NanoMQ（MQTT） |
 | 工业网关 | Neuron 2.10.4（原生进程 @ :7000） |
@@ -103,7 +103,7 @@ Claw/
 | F0 采集点位管理+入库 | ✅ 已验收 | `backend/app/services/*`, `frontend/src/components/TagsTable.tsx` |
 | F1 历史数据（超级表 + latest 缓存） | ✅ 已验收 | `init-db/*`（`t_telemetry` hypertable + `t_telemetry_latest`）, `backend/app/services/telemetry_store.py` |
 | F1 逻辑点位（公式/条件引擎） | ✅ 已验收 | `backend/app/services/formula_engine.py`, `backend/app/api/tags.py` |
-| F2 规则引擎（条件触发） | ✅ 已验收 | `backend/app/services/rule_engine.py`, `backend/app/api/rules.py` |
+| F2 规则引擎（GoRules zen-engine） | ✅ 已验收 | `backend/app/services/gorules_adapter.py`, `backend/app/services/rule_engine.py`, `backend/app/api/rules.py`, `frontend/src/components/RulesPanel.tsx` |
 | F2 告警（产生/查询/确认） | ✅ 已验收 | `backend/app/api/alarms.py`, `backend/app/services/rule_engine.py` |
 | F2 下行 RPC（模拟端点） | ✅ 已验收 | `backend/app/api/rpc.py` |
 | F3 节点树（自定义节点） | ✅ 已部署 | `frontend/src/components/NodeTreeEditor.tsx`, `backend/app/api/nodes.py` |
@@ -139,6 +139,7 @@ Claw/
 | `t_nodes.node_type` NOT NULL | schema 允许 None，但数据库不允许 | 前端已改为空字符串 `''` 而非 `null` |
 | `docker commit` 丢失 USER/CMD | 当前 e606 镜像是容器 commit 而来 | `docker-compose.e606.yml` 已显式设 `user: root` |
 | Tags API 同步阻塞 | 使用 psycopg2 ThreadedConnectionPool | 426ms 可接受，后续改 asyncpg（非阻塞） |
+| GoRules Python 包导入名 | PyPI 包名为 zen-engine，但 import 名是 `zen`（不是 `zen_engine`） | 已适配 `gorules_adapter.py` |
 
 ---
 
@@ -217,6 +218,7 @@ docker logs omnithings --since 5m | grep -i aggregation
 2. **重建镜像**：在能正常 build 的机器上按新 Dockerfile 构建 arm64 镜像，替换 e606 的 commit 层。
 3. **测试覆盖**：当前 backend/tests/ 有 18 个单测，可扩展端到端测试。
 4. **F2 真实下行通道**：当前 RPC 为模拟端点，后续接 NanoMQ 下行主题 / Neuron write API。
+5. **GoRules 高级规则**：利用 jdm-editor 的标准 JDM Decision Graph/Table 实现多条件分支、决策表命中策略（first/collect）等复杂规则。
 
 ---
 
@@ -225,6 +227,8 @@ docker logs omnithings --since 5m | grep -i aggregation
 e606 线上环境首页（http://e606.hlszh.com:9000/）：
 
 ![OmniThings 首页](images/omnithings-home.png)
+
+规则引擎已集成 jdm-editor，支持简单表达式与标准 JDM 决策图两种编辑模式。
 
 ---
 
