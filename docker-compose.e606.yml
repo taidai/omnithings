@@ -22,6 +22,7 @@ services:
     ports: []
 
   backend:
+    image: omnithings:latest-arm
     network_mode: host
     tmpfs:
       - /dev/mqueue

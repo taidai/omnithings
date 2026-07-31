@@ -124,7 +124,7 @@ deploy_on_server() {
 set -euo pipefail
 
 REMOTE_DIR="/home/omnithings"
-TAR_FILE="/tmp/$(ls /tmp/omnithings-*-arm.tar.gz 2>/dev/null | head -1)"
+TAR_FILE="$(ls /tmp/omnithings-*-arm.tar.gz 2>/dev/null | head -1)"
 IMAGE_TAG=$(basename "$TAR_FILE" .tar.gz)
 
 echo "[SERVER] Loading Docker image from $TAR_FILE ..."

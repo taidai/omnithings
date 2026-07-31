@@ -15,7 +15,7 @@
 # ============================================================
 
 # ---- Stage 1: Frontend Build ----
-FROM node:22-alpine AS frontend-builder
+FROM docker.m.daocloud.io/library/node:22-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
