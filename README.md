@@ -85,7 +85,7 @@ Site (场站)
 | **F3 节点聚合** | ✅ 已交付 | 5 层树 + 每层 SUM/AVG/MAX/MIN/COUNT/LAST 汇总（10s 周期） |
 | **F2 控制规则** | ✅ 已交付 | GoRules zen-engine 求值 + 告警产生/确认 + RPC 下行 + jdm-editor 可视化规则编辑 |
 
-> 验收状态：F0/F1/F2/F3 端到端验收脚本 **14 passed / 0 failed**（`backend/acceptance_f0_f3.py` 当前版本），已接入 GoRules zen-engine，已部署至 e606 线上环境。
+> 验收状态：F0/F1/F2/F3 端到端验收脚本 **14 passed / 0 failed**（`backend/acceptance_f0_f3.py` 当前版本），已接入 GoRules zen-engine + jdm-editor 可视化规则编辑，告警触发时记录来源节点/点位/触发值，已部署至 e606 线上环境。
 
 ### 实现效果图
 

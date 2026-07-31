@@ -103,8 +103,8 @@ Claw/
 | F0 采集点位管理+入库 | ✅ 已验收 | `backend/app/services/*`, `frontend/src/components/TagsTable.tsx` |
 | F1 历史数据（超级表 + latest 缓存） | ✅ 已验收 | `init-db/*`（`t_telemetry` hypertable + `t_telemetry_latest`）, `backend/app/services/telemetry_store.py` |
 | F1 逻辑点位（公式/条件引擎） | ✅ 已验收 | `backend/app/services/formula_engine.py`, `backend/app/api/tags.py` |
-| F2 规则引擎（GoRules zen-engine） | ✅ 已验收 | `backend/app/services/gorules_adapter.py`, `backend/app/services/rule_engine.py`, `backend/app/api/rules.py`, `frontend/src/components/RulesPanel.tsx` |
-| F2 告警（产生/查询/确认） | ✅ 已验收 | `backend/app/api/alarms.py`, `backend/app/services/rule_engine.py` |
+| F2 规则引擎（GoRules zen-engine + jdm-editor 模板/主题） | ✅ 已验收 | `backend/app/services/gorules_adapter.py`, `backend/app/services/rule_engine.py`, `backend/app/api/rules.py`, `frontend/src/components/RulesPanel.tsx` |
+| F2 告警（产生/查询/确认/触发详情） | ✅ 已验收 | `backend/app/api/alarms.py`, `backend/app/services/rule_engine.py`，告警新增来源节点/来源点位/触发值字段 |
 | F2 下行 RPC（模拟端点） | ✅ 已验收 | `backend/app/api/rpc.py` |
 | F3 节点树（自定义节点） | ✅ 已部署 | `frontend/src/components/NodeTreeEditor.tsx`, `backend/app/api/nodes.py` |
 | F3 挂载设备（Neuron 导入） | ✅ 已验证 | `backend/app/api/tags.py::import-neuron`, `backend/app/services/neuron_client.py` |
@@ -140,6 +140,7 @@ Claw/
 | `docker commit` 丢失 USER/CMD | 当前 e606 镜像是容器 commit 而来 | `docker-compose.e606.yml` 已显式设 `user: root` |
 | Tags API 同步阻塞 | 使用 psycopg2 ThreadedConnectionPool | 426ms 可接受，后续改 asyncpg（非阻塞） |
 | GoRules Python 包导入名 | PyPI 包名为 zen-engine，但 import 名是 `zen`（不是 `zen_engine`） | 已适配 `gorules_adapter.py` |
+| JDM 决策图需要 input/output 节点 | 标准 JDM 必须包含 inputNode 和 outputNode，否则 zen-engine 报 invalid type | 模板已内置 input/output 节点 |
 
 ---
 
@@ -228,7 +229,7 @@ e606 线上环境首页（http://e606.hlszh.com:9000/）：
 
 ![OmniThings 首页](images/omnithings-home.png)
 
-规则引擎已集成 jdm-editor，支持简单表达式与标准 JDM 决策图两种编辑模式。
+规则引擎已集成 jdm-editor，支持简单表达式、决策表分级告警、多分支联合判断三种模板，并提供浅色/科技绿主题适配；告警中心展示来源节点、来源点位、触发值。
 
 ---
 
