@@ -18,7 +18,6 @@ export interface Node {
   sort_order: number
   enabled: boolean
   tag_count: number
-  config?: Record<string, any>
 }
 
 export interface Tag {
@@ -170,19 +169,6 @@ export async function createNode(input: NodeCreateInput): Promise<{ node: Node }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.detail || `Create node failed: ${res.status}`)
-  }
-  return res.json()
-}
-
-export async function updateNode(nodeId: string, updates: Partial<NodeCreateInput>): Promise<{ node: Node }> {
-  const res = await fetch(`${API_BASE}/nodes/${nodeId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Update node failed: ${res.status}`)
   }
   return res.json()
 }
