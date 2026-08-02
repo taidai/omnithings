@@ -217,6 +217,9 @@ def create_app() -> FastAPI:
     from app.api.alarms import router as alarms_router
     app.include_router(alarms_router, prefix="/api/v1", tags=["Alarms"])
 
+    from app.api.rule_templates import router as rule_templates_router
+    app.include_router(rule_templates_router, prefix="/api/v1", tags=["Rule Templates"])
+
     # ---- Static Frontend (F0 可视化 V1) ----
     # 后端直接托管前端 dist，无需独立 nginx 容器
     import os

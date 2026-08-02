@@ -685,6 +685,68 @@ export async function evaluateGraph(graph: Record<string, any>, context: Record<
   return res.json()
 }
 
+// ── Rule Templates ──
+
+export interface RuleTemplate {
+  id: string
+  name: string
+  description: string | null
+  rule_type: Rule['rule_type']
+  graph: Record<string, any>
+  config: Record<string, any>
+  enabled: boolean
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export async function fetchRuleTemplates(): Promise<RuleTemplate[]> {
+  const res = await fetch(`${API_BASE}/rule-templates`)
+  if (!res.ok) throw new Error(`Fetch templates failed: ${res.status}`)
+  const data = await res.json()
+  return data.templates || []
+}
+
+export async function fetchRuleTemplate(templateId: string): Promise<RuleTemplate> {
+  const res = await fetch(`${API_BASE}/rule-templates/${templateId}`)
+  if (!res.ok) throw new Error(`Fetch template failed: ${res.status}`)
+  return res.json()
+}
+
+export interface RuleTemplateCreateInput {
+  name: string
+  description?: string | null
+  rule_type: Rule['rule_type']
+  graph?: Record<string, any>
+  config?: Record<string, any>
+  enabled?: boolean
+}
+
+export async function createRuleTemplate(input: RuleTemplateCreateInput): Promise<RuleTemplate> {
+  const res = await fetch(`${API_BASE}/rule-templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(`Create template failed: ${res.status}`)
+  return res.json()
+}
+
+export async function updateRuleTemplate(templateId: string, updates: Partial<RuleTemplateCreateInput>): Promise<RuleTemplate> {
+  const res = await fetch(`${API_BASE}/rule-templates/${templateId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) throw new Error(`Update template failed: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteRuleTemplate(templateId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/rule-templates/${templateId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`Delete template failed: ${res.status}`)
+}
+
 // ── Alarms ──
 
 export type AlarmLevel = 'INFO' | 'WARNING' | 'MAJOR' | 'CRITICAL'

@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DecisionGraph, GraphSimulator, JdmConfigProvider } from '@gorules/jdm-editor'
-import { PlayCircleOutlined } from '@ant-design/icons'
-import json5 from 'json5'
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import {
-  fetchRules, fetchNodes, fetchNodeDetail, createRule, updateRule, deleteRule, simulateRule, evaluateGraph, writeNeuronTag,
-  type Rule, type RuleCreateRequest, type Node, type NodeTag,
+  fetchRules, fetchNodes, fetchNodeDetail, createRule, updateRule, deleteRule, simulateRule, evaluateGraph, writeNeuronTag, fetchRuleTemplates,
+  type Rule, type RuleCreateRequest, type Node, type NodeTag, type RuleTemplate,
 } from '../api/client'
 
 type DecisionGraphType = {
@@ -68,72 +66,17 @@ function extractConfig(content: any): RuleConfig {
   return { sourceNodeIds: [], actions: [], inputMappings: {}, outputBindings: [], template: 'custom' }
 }
 
-const RULE_TYPES: RuleCreateRequest['rule_type'][] = ['alarm', 'control', 'fault_map', 'linkage']
-
-const TYPE_LABELS: Record<RuleCreateRequest['rule_type'], string> = {
-  alarm: '告警 alarm',
-  control: '控制 control',
-  fault_map: '故障映射 fault_map',
-  linkage: '联动 linkage',
+function emptyGraph(): DecisionGraphType {
+  return {
+    nodes: [
+      { id: 'input-1', type: 'inputNode', name: 'Request', position: { x: 70, y: 250 } },
+      { id: 'output-1', type: 'outputNode', name: 'Response', position: { x: 670, y: 250 } },
+    ],
+    edges: [],
+  }
 }
 
-// 规则模板：光储充（PV + ESS + EVSE）调度决策表
-function energyDispatchGraph(): DecisionGraphType {
-  return {
-      nodes: [
-      {
-        id: 'input-1',
-        type: 'inputNode',
-        name: 'Site Telemetry',
-        position: { x: 70, y: 250 },
-      },
-      {
-        id: 'table-1',
-        type: 'decisionTableNode',
-        name: 'Energy Dispatch',
-        position: { x: 370, y: 250 },
-        content: {
-          hitPolicy: 'first',
-          inputs: [
-            { id: 'soc', name: 'SOC %', field: 'soc' },
-            { id: 'pv_power', name: 'PV Power kW', field: 'pv_power' },
-            { id: 'load_power', name: 'Load kW', field: 'load_power' },
-            { id: 'tou_price', name: 'TOU Price', field: 'tou_price' },
-          ],
-          outputs: [
-            { id: 'pcs_setpoint', name: 'PCS Setpoint kW', field: 'pcs_setpoint' },
-            { id: 'evse_current', name: 'EV Current A', field: 'evse_current' },
-            { id: 'strategy', name: 'Strategy', field: 'strategy' },
-          ],
-          rules: [
-            { _id: 'r1', soc: '< 10', pv_power: '*', load_power: '*', tou_price: '*', pcs_setpoint: '0', evse_current: '0', strategy: '"电池亏电保护"' },
-            { _id: 'r2', soc: '> 95', pv_power: '*', load_power: '*', tou_price: '*', pcs_setpoint: '0', evse_current: '16', strategy: '"电池充满，光伏直供"' },
-            { _id: 'r3', soc: '*', pv_power: '> load_power', tou_price: '< 0.4', load_power: '*', pcs_setpoint: '-min(pv_power - load_power, 50)', evse_current: '16', strategy: '"光伏富余，低价储充"' },
-            { _id: 'r4', soc: '*', pv_power: '< load_power', tou_price: '> 0.8', load_power: '*', pcs_setpoint: 'min(load_power - pv_power, 50)', evse_current: '8', strategy: '"高电价放电+限充"' },
-            { _id: 'r5', soc: '*', pv_power: '*', load_power: '*', tou_price: '*', pcs_setpoint: 'pv_power - load_power', evse_current: '16', strategy: '"默认自发自用"' },
-          ],
-          passThrough: false,
-          inputField: null,
-          outputPath: null,
-          executionMode: 'single',
-        },
-      },
-      {
-        id: 'output-1',
-        type: 'outputNode',
-        name: 'Dispatch Command',
-        position: { x: 670, y: 250 },
-      },
-    ],
-    edges: [
-      { id: 'e1', sourceId: 'input-1', targetId: 'table-1', type: 'edge' },
-      { id: 'e2', sourceId: 'table-1', targetId: 'output-1', type: 'edge' },
-    ],
-    }
-  }
-  
-  // 兼容旧数据：decisionNode / startNode / endNode / 纯 DecisionTable
-  function ensureGraph(content: any): DecisionGraphType {
+function ensureGraph(content: any): DecisionGraphType {
   if (content && typeof content === 'object') {
     if (Array.isArray(content.nodes)) {
       const graph = { ...content } as DecisionGraphType
@@ -160,127 +103,7 @@ function energyDispatchGraph(): DecisionGraphType {
       }
     }
   }
-  return energyDispatchGraph()
-}
-
-
-type RuleTemplate = {
-  id: string
-  name: string
-  description: string
-  ruleType: RuleCreateRequest['rule_type']
-}
-
-const RULE_TEMPLATES: RuleTemplate[] = [
-  {
-    id: 'energy_dispatch',
-    name: '光储充调度',
-    description: 'PV + ESS + EVSE，根据 SOC / 光伏 / 负载 / 电价自动调度 PCS 与充电桩',
-    ruleType: 'control',
-  },
-  {
-    id: 'heartbeat',
-    name: '心跳测试',
-    description: '固定写入心跳信号，验证控制链路是否打通',
-    ruleType: 'control',
-  },
-  {
-    id: 'custom',
-    name: '自定义',
-    description: '从空白决策图开始，自行拖拽节点',
-    ruleType: 'control',
-  },
-]
-
-function heartbeatGraph(): DecisionGraphType {
-  return {
-    nodes: [
-      {
-        id: 'input-1',
-        type: 'inputNode',
-        name: 'Trigger',
-        position: { x: 70, y: 250 },
-      },
-      {
-        id: 'table-1',
-        type: 'decisionTableNode',
-        name: 'Heartbeat',
-        position: { x: 370, y: 250 },
-        content: {
-          hitPolicy: 'first',
-          inputs: [{ id: 'trigger', name: 'Trigger', field: 'trigger' }],
-          outputs: [{ id: 'value', name: 'Value', field: 'value' }],
-          rules: [{ _id: 'r1', trigger: '*', value: '1' }],
-          passThrough: false,
-          inputField: null,
-          outputPath: null,
-          executionMode: 'single',
-        },
-      },
-      {
-        id: 'output-1',
-        type: 'outputNode',
-        name: 'Command',
-        position: { x: 670, y: 250 },
-      },
-    ],
-    edges: [
-      { id: 'e1', sourceId: 'input-1', targetId: 'table-1', type: 'edge' },
-      { id: 'e2', sourceId: 'table-1', targetId: 'output-1', type: 'edge' },
-    ],
-  }
-}
-
-function emptyGraph(): DecisionGraphType {
-  return {
-    nodes: [
-      { id: 'input-1', type: 'inputNode', name: 'Request', position: { x: 70, y: 250 } },
-      { id: 'output-1', type: 'outputNode', name: 'Response', position: { x: 670, y: 250 } },
-    ],
-    edges: [],
-  }
-}
-
-function applyTemplate(templateId: string): { graph: DecisionGraphType; config: RuleConfig } {
-  if (templateId === 'energy_dispatch') {
-    return {
-      graph: energyDispatchGraph(),
-      config: {
-        sourceNodeIds: [],
-        actions: [],
-        inputMappings: {},
-        outputBindings: [
-          { field: 'pcs_setpoint', name: 'PCS Setpoint kW', node: 'tk_db', group: 'meters', tag: 'PCS功率设定', cooldown: 60 },
-          { field: 'evse_current', name: 'EV Current A', node: 'tk_db', group: 'meters', tag: 'EVSE电流设定', cooldown: 60 },
-        ],
-        template: 'energy_dispatch',
-      },
-    }
-  }
-  if (templateId === 'heartbeat') {
-    return {
-      graph: heartbeatGraph(),
-      config: {
-        sourceNodeIds: [],
-        actions: [
-          { type: 'neuron_write', node: 'tk_db', group: 'meters', tag: '心跳信号', value: '1', cooldown: 60 },
-        ],
-        inputMappings: {},
-        outputBindings: [],
-        template: 'heartbeat',
-      },
-    }
-  }
-  return {
-    graph: emptyGraph(),
-    config: {
-      sourceNodeIds: [],
-      actions: [],
-      inputMappings: {},
-      outputBindings: [],
-      template: 'custom',
-    },
-  }
+  return emptyGraph()
 }
 
 function extractGraphFields(graph: DecisionGraphType) {
@@ -321,12 +144,23 @@ function actionsToBindings(actions: NeuronWriteAction[], outputs: { id: string; 
     })
 }
 
+const RULE_TYPES: RuleCreateRequest['rule_type'][] = ['alarm', 'control', 'fault_map', 'linkage']
+
+const TYPE_LABELS: Record<RuleCreateRequest['rule_type'], string> = {
+  alarm: '告警 alarm',
+  control: '控制 control',
+  fault_map: '故障映射 fault_map',
+  linkage: '联动 linkage',
+}
+
 function RuleForm({
   initial,
+  templates,
   onSave,
   onCancel,
 }: {
   initial?: Rule
+  templates: RuleTemplate[]
   onSave: (data: RuleCreateRequest) => Promise<void>
   onCancel: () => void
 }) {
@@ -353,7 +187,6 @@ function RuleForm({
     fetchNodes().then(setNodes).catch(() => {})
   }, [])
 
-  // 加载已选节点下的 tags，用于输入映射下拉
   useEffect(() => {
     if (!config.sourceNodeIds.length) {
       setNodeTags({})
@@ -378,7 +211,6 @@ function RuleForm({
 
   const graphFields = useMemo(() => extractGraphFields(graph), [graph])
 
-  // 当 graph 输入输出变化时，同步更新 outputBindings / inputMappings 的字段列表
   useEffect(() => {
     setConfig((prev) => {
       const newInputMappings: Record<string, string> = {}
@@ -409,16 +241,24 @@ function RuleForm({
     return list
   }, [nodeTags, nodes])
 
+  const applyTemplate = (templateId: string) => {
+    const tmpl = templates.find((t) => t.id === templateId)
+    if (!tmpl) return
+    setGraph(ensureGraph(tmpl.graph))
+    setConfig(extractConfig({ _config: tmpl.config }))
+    setRuleType(tmpl.rule_type)
+  }
+
   const panels = useMemo(
     () => [
       {
         id: 'simulator',
         title: 'Simulator',
-        icon: <PlayCircleOutlined />,
+        icon: <span className="text-xs">▶</span>,
         hideHeader: true,
         renderPanel: () => (
           <GraphSimulator
-            defaultRequest={json5.stringify(
+            defaultRequest={JSON.stringify(
               { pv_power: 120, load_power: 80, soc: 45, tou_price: 0.35 },
               null,
               2,
@@ -456,13 +296,6 @@ function RuleForm({
     [simLoading],
   )
 
-  const handleApplyTemplate = (templateId: string) => {
-    const applied = applyTemplate(templateId)
-    setGraph(applied.graph)
-    setConfig(applied.config)
-    setRuleType(applied.config.template === 'heartbeat' ? 'control' : 'control')
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -472,7 +305,6 @@ function RuleForm({
     }
     setSaving(true)
     try {
-      // 输出绑定 -> 控制动作
       const derivedActions = showRawActions ? config.actions : bindingsToActions(config.outputBindings || [])
       const jdm_content = { ...graph, _config: { ...config, actions: derivedActions } }
       await onSave({ name, rule_type: ruleType, enabled, jdm_content: jdm_content as Record<string, any> })
@@ -574,75 +406,84 @@ function RuleForm({
               启用
             </label>
           </div>
-          <div className="col-span-2">
-            {isCreating && (
-              <>
-                <label className="block text-xs text-gray-600 mb-1">规则模板</label>
-                <select
-                  value={config.template || 'custom'}
-                  onChange={(e) => handleApplyTemplate(e.target.value)}
-                  className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
-                >
-                  {RULE_TEMPLATES.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </>
-            )}
-          </div>
-          <div className="col-span-2 flex justify-end pb-1">
-            <button
-              type="submit"
-              disabled={saving}
-              className="neu-btn px-4 py-1.5 text-xs font-medium text-white bg-[#52c41a] hover:bg-[#389e0d] disabled:opacity-50"
-            >
-              {saving ? '保存中...' : '保存'}
-            </button>
-          </div>
+          {isCreating && templates.length > 0 && (
+            <div className="col-span-4">
+              <label className="block text-xs text-gray-600 mb-1">规则模板</label>
+              <select
+                value={config.template || ''}
+                onChange={(e) => applyTemplate(e.target.value)}
+                className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
+              >
+                <option value="">-- 选择模板 --</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
-        {error && <div className="px-5 text-xs text-red-500 mb-2">{error}</div>}
+        {/* Tabs + error */}
+        <div className="px-5 border-b border-gray-200/50 bg-white shadow-sm flex items-center justify-between">
+          <div className="flex">
+            <TabButton id="input" label="输入：数据源与字段映射" />
+            <TabButton id="process" label="处理：决策图" />
+            <TabButton id="output" label="输出：控制绑定" />
+          </div>
+          {error && <div className="text-xs text-red-500 pr-2">{error}</div>}
+        </div>
 
-        {/* IPO Tabs */}
-        <div className="px-5 bg-white border-b border-gray-200/50 flex gap-2">
-          <TabButton id="input" label="① 输入" />
-          <TabButton id="process" label="② 处理" />
-          <TabButton id="output" label="③ 输出" />
+        {/* Footer actions */}
+        <div className="px-5 py-3 border-t border-gray-200/50 bg-white shadow-sm flex justify-end gap-2">
+          <button type="button" onClick={onCancel} className="neu-btn px-4 py-1.5 text-xs text-gray-600">
+            取消
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="neu-btn px-5 py-1.5 text-xs font-medium text-white bg-[#52c41a] hover:bg-[#389e0d] disabled:opacity-50"
+          >
+            {saving ? '保存中...' : '保存规则'}
+          </button>
         </div>
 
         {/* Tab content */}
-        <div className="flex-1 min-h-0 p-5 overflow-y-auto">
+        <div className="flex-1 min-h-0 p-5 overflow-hidden">
           {activeTab === 'input' && (
-            <div className="grid grid-cols-12 gap-5 h-full">
-              <div className="col-span-4 flex flex-col">
-                <label className="block text-xs font-medium text-gray-700 mb-2">数据源节点</label>
-                <div className="neu-inset flex-1 overflow-y-auto p-3 text-xs space-y-2">
-                  {nodes.map((n) => (
-                    <label key={n.id} className="flex items-center gap-2 cursor-pointer hover:bg-white/50 rounded px-1">
-                      <input
-                        type="checkbox"
-                        checked={config.sourceNodeIds.includes(n.id)}
-                        onChange={(e) => {
-                          const ids = new Set(config.sourceNodeIds)
-                          e.target.checked ? ids.add(n.id) : ids.delete(n.id)
-                          setConfig({ ...config, sourceNodeIds: Array.from(ids) })
-                        }}
-                        className="w-3.5 h-3.5 accent-[#52c41a]"
-                      />
-                      <span className="truncate">{n.name}</span>
-                      <span className="text-[10px] text-gray-400">L{n.layer}</span>
-                    </label>
-                  ))}
-                  {nodes.length === 0 && <div className="text-gray-400">加载中…</div>}
+            <div className="flex flex-col gap-4 h-full">
+              <div className="neu-card p-4 bg-white">
+                <h4 className="text-sm font-bold text-gray-800 mb-2">数据源节点</h4>
+                <p className="text-xs text-gray-500 mb-3">选择规则读取数据的节点（可多选）。不选则读取全库最新值。</p>
+                <div className="neu-inset p-3 max-h-[200px] overflow-y-auto">
+                  {nodes.length === 0 && <p className="text-xs text-gray-400">暂无节点</p>}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {nodes.map((n) => {
+                      const checked = config.sourceNodeIds.includes(n.id)
+                      return (
+                        <label key={n.id} className="flex items-center gap-2 p-2 rounded hover:bg-white/40 cursor-pointer text-xs">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              const next = new Set(config.sourceNodeIds)
+                              if (next.has(n.id)) next.delete(n.id)
+                              else next.add(n.id)
+                              setConfig({ ...config, sourceNodeIds: Array.from(next) })
+                            }}
+                            className="w-4 h-4 accent-[#52c41a]"
+                          />
+                          <span className="truncate" title={n.name}>{n.name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
 
-              <div className="col-span-8 flex flex-col">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-medium text-gray-700">字段映射</label>
-                  <span className="text-[10px] text-gray-400">把决策表字段映射到节点里的真实 tag 名</span>
-                </div>
-                <div className="neu-inset flex-1 overflow-y-auto p-3 text-xs">
+              <div className="neu-card p-4 bg-white flex-1 overflow-hidden flex flex-col">
+                <h4 className="text-sm font-bold text-gray-800 mb-2">字段映射</h4>
+                <p className="text-xs text-gray-500 mb-3">把决策表字段名映射到真实 tag 名；不映射则按字段名直接匹配。</p>
+                <div className="neu-inset flex-1 overflow-auto p-3 text-xs">
                   {graphFields.inputs.length === 0 ? (
                     <div className="text-gray-400">当前决策表没有输入字段</div>
                   ) : (
@@ -650,8 +491,8 @@ function RuleForm({
                       <thead className="text-[10px] text-gray-500 border-b border-gray-200">
                         <tr>
                           <th className="text-left py-2 font-medium">决策表字段</th>
-                          <th className="text-left py-2 font-medium">来源 tag</th>
-                          <th className="text-left py-2 font-medium">来源节点</th>
+                          <th className="text-left py-2 font-medium">绑定 tag</th>
+                          <th className="text-left py-2 font-medium">所在节点</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -701,10 +542,10 @@ function RuleForm({
                 <div className="flex items-start justify-between">
                   <div>
                     <h4 className="text-sm font-bold text-gray-800">
-                      {RULE_TEMPLATES.find((t) => t.id === config.template)?.name || '自定义规则'}
+                      {templates.find((t) => t.id === config.template)?.name || '自定义规则'}
                     </h4>
                     <p className="text-xs text-gray-500 mt-1">
-                      {RULE_TEMPLATES.find((t) => t.id === config.template)?.description || '自定义决策图'}
+                      {templates.find((t) => t.id === config.template)?.description || '自定义决策图'}
                     </p>
                   </div>
                   <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
@@ -746,7 +587,7 @@ function RuleForm({
                     </DndProvider>
                   </JdmConfigProvider>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                  <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm text-center">
                     启用「高级编辑模式」后可拖拽节点、编辑决策表。
                     <br />
                     日常配置只需在「输入」「输出」两个标签页完成。
@@ -907,7 +748,7 @@ function RuleForm({
                     onClick={() =>
                       setConfig({
                         ...config,
-                        actions: [...config.actions, { type: 'neuron_write', node: 'tk_db', group: 'meters', tag: '', value: '1', cooldown: 60 }],
+                        actions: [...config.actions, { type: 'neuron_write', node: '', group: '', tag: '', value: '1', cooldown: 60 }],
                       })
                     }
                     className="neu-btn px-2 py-1 text-[10px] text-gray-600"
@@ -997,6 +838,7 @@ function SimulateModal({
 
 export default function RuleEnginePage() {
   const [rules, setRules] = useState<Rule[]>([])
+  const [templates, setTemplates] = useState<RuleTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState<Rule | null>(null)
   const [creating, setCreating] = useState(false)
@@ -1005,8 +847,9 @@ export default function RuleEnginePage() {
   const load = async () => {
     setLoading(true)
     try {
-      const data = await fetchRules()
-      setRules(data)
+      const [rulesData, templatesData] = await Promise.all([fetchRules(), fetchRuleTemplates()])
+      setRules(rulesData)
+      setTemplates(templatesData)
     } finally {
       setLoading(false)
     }
@@ -1036,7 +879,7 @@ export default function RuleEnginePage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-bold text-gray-800">规则引擎</h2>
-          <p className="text-xs text-gray-500">管理 GoRules 决策图，为节点绑定规则。</p>
+          <p className="text-xs text-gray-500">管理 GoRules 决策图，为节点绑定规则。模板由后端配置驱动。</p>
         </div>
         <button
           onClick={() => setCreating(true)}
@@ -1097,6 +940,7 @@ export default function RuleEnginePage() {
 
       {creating && (
         <RuleForm
+          templates={templates}
           onSave={handleCreate}
           onCancel={() => setCreating(false)}
         />
@@ -1104,6 +948,7 @@ export default function RuleEnginePage() {
       {editing && (
         <RuleForm
           initial={editing}
+          templates={templates}
           onSave={handleUpdate}
           onCancel={() => setEditing(null)}
         />

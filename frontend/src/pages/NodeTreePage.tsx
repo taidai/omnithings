@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  fetchNodes, fetchRules, updateNode,
-  type Node, type Rule,
+  fetchNodes, fetchRules, updateNode, createNode, deleteNode,
+  fetchCategories, fetchNeuronNodes, fetchNeuronGroups, importNeuronTags,
+  type Node, type Rule, type Category, type NeuronNode, type NeuronGroup,
 } from '../api/client'
 import NodeTagPanel from '../components/NodeTagPanel'
 import NodeSnapshotPanel from '../components/NodeSnapshotPanel'
 
 type TabKey = 'overview' | 'tags' | 'snapshots'
+type FormMode = 'create' | 'edit'
 
 const LAYER_NAMES: Record<number, string> = {
   1: '站点 Site',
@@ -180,13 +182,259 @@ function AssignRuleModal({
   )
 }
 
+function NodeFormModal({
+  mode,
+  node,
+  parentNode,
+  categories,
+  onClose,
+  onSaved,
+}: {
+  mode: FormMode
+  node?: Node
+  parentNode?: Node
+  categories: Category[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const isCreate = mode === 'create'
+  const defaultLayer = isCreate ? (parentNode ? parentNode.layer + 1 : 1) : (node?.layer || 1)
+  const [name, setName] = useState(node?.name || '')
+  const [nodeType, setNodeType] = useState(node?.node_type || '')
+  const [sortOrder, setSortOrder] = useState(node?.sort_order ?? 0)
+  const [enabled, setEnabled] = useState(node?.enabled ?? true)
+  const [saving, setSaving] = useState(false)
+
+  const typeOptions = useMemo(() => {
+    const set = new Set(categories.map((c) => c.node_type))
+    if (nodeType && !set.has(nodeType)) set.add(nodeType)
+    return Array.from(set)
+  }, [categories, nodeType])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    setSaving(true)
+    try {
+      if (isCreate) {
+        await createNode({
+          name: name.trim(),
+          parent_id: parentNode?.id || null,
+          layer: defaultLayer,
+          node_type: nodeType.trim() || null,
+          sort_order: Number(sortOrder) || 0,
+          enabled,
+        })
+     } else if (node) {
+       await updateNode(node.id, {
+         name: name.trim(),
+          node_type: nodeType.trim() || undefined,
+         sort_order: Number(sortOrder) || 0,
+         enabled,
+       })
+      }
+      onSaved()
+      onClose()
+    } catch (e: any) {
+      alert('保存失败：' + (e.message || e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="neu-card w-[420px] max-w-[90vw] p-5">
+        <h3 className="text-sm font-bold text-gray-800 mb-3">{isCreate ? '新建节点' : '编辑节点'}</h3>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">节点名称</label>
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="neu-input w-full px-3 py-1.5 text-xs"
+              placeholder="例如：1# 储能电站"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">节点类型</label>
+            <input
+              list="node-type-options"
+              value={nodeType}
+              onChange={(e) => setNodeType(e.target.value)}
+              className="neu-input w-full px-3 py-1.5 text-xs"
+              placeholder="例如：ESS / PV / Meter"
+            />
+            <datalist id="node-type-options">
+              {typeOptions.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">层级</label>
+              <input
+                disabled
+                value={LAYER_NAMES[defaultLayer] || defaultLayer}
+                className="neu-input w-full px-3 py-1.5 text-xs bg-gray-100 text-gray-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">排序</label>
+              <input
+                type="number"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(Number(e.target.value))}
+                className="neu-input w-full px-3 py-1.5 text-xs"
+              />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              className="w-4 h-4 accent-[#52c41a]"
+            />
+            启用
+          </label>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="neu-btn px-4 py-1.5 text-xs text-gray-600">
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="neu-btn px-4 py-1.5 text-xs font-medium text-white bg-[#52c41a] hover:bg-[#389e0d] disabled:opacity-50"
+            >
+              {saving ? '保存中...' : '保存'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function ImportNeuronModal({
+  node,
+  onClose,
+  onSaved,
+}: {
+  node: Node
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [neuronNodes, setNeuronNodes] = useState<NeuronNode[]>([])
+  const [groups, setGroups] = useState<NeuronGroup[]>([])
+  const [selectedNode, setSelectedNode] = useState('')
+  const [selectedGroup, setSelectedGroup] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [importing, setImporting] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchNeuronNodes()
+      .then((ns) => {
+        setNeuronNodes(ns)
+        if (ns.length > 0) setSelectedNode(ns[0].name)
+      })
+      .catch(() => alert('获取 Neuron 节点失败'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    if (!selectedNode) {
+      setGroups([])
+      return
+    }
+    fetchNeuronGroups(selectedNode)
+      .then((gs) => {
+        setGroups(gs)
+        setSelectedGroup(gs[0]?.name || '')
+      })
+      .catch(() => setGroups([]))
+  }, [selectedNode])
+
+  const handleImport = async () => {
+    if (!selectedNode || !selectedGroup) return
+    setImporting(true)
+    try {
+      const res = await importNeuronTags({
+        node_id: node.id,
+        neuron_node: selectedNode,
+        neuron_group: selectedGroup,
+      })
+      alert(`导入完成：新增 ${res.imported} 个，跳过 ${res.skipped} 个`)
+      onSaved()
+      onClose()
+    } catch (e: any) {
+      alert('导入失败：' + (e.message || e))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="neu-card w-[420px] max-w-[90vw] p-5">
+        <h3 className="text-sm font-bold text-gray-800 mb-2">从 Neuron 导入点位</h3>
+        <p className="text-xs text-gray-500 mb-3">目标节点: <span className="font-medium text-gray-700">{node.name}</span></p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Neuron 节点</label>
+            <select
+              value={selectedNode}
+              onChange={(e) => setSelectedNode(e.target.value)}
+              disabled={loading}
+              className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
+            >
+              {neuronNodes.map((n) => (
+                <option key={n.name} value={n.name}>{n.name} ({n.plugin})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Neuron 分组</label>
+            <select
+              value={selectedGroup}
+              onChange={(e) => setSelectedGroup(e.target.value)}
+              className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
+            >
+              {groups.map((g) => (
+                <option key={g.name} value={g.name}>{g.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={onClose} className="neu-btn px-4 py-1.5 text-xs text-gray-600">取消</button>
+            <button
+              onClick={handleImport}
+              disabled={!selectedNode || !selectedGroup || importing}
+              className="neu-btn px-4 py-1.5 text-xs font-medium text-white bg-[#52c41a] hover:bg-[#389e0d] disabled:opacity-50"
+            >
+              {importing ? '导入中...' : '导入'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function NodeTreePage() {
   const [nodes, setNodes] = useState<Node[]>([])
   const [rules, setRules] = useState<Rule[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [showAssignModal, setShowAssignModal] = useState(false)
+  const [nodeFormMode, setNodeFormMode] = useState<FormMode | null>(null)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const loadNodes = async () => {
@@ -194,10 +442,10 @@ export default function NodeTreePage() {
     try {
       const data = await fetchNodes()
       setNodes(data)
-      if (data.length > 0) {
+      if (data.length > 0 && !selectedId) {
         const roots = data.filter((n) => !n.parent_id)
         const firstId = roots[0]?.id || data[0].id
-        setSelectedId((prev) => prev || firstId)
+        setSelectedId(firstId)
         setExpanded(new Set(data.map((n) => n.id)))
       }
     } finally {
@@ -214,9 +462,19 @@ export default function NodeTreePage() {
     }
   }
 
+  const loadCategories = async () => {
+    try {
+      const data = await fetchCategories()
+      setCategories(data)
+    } catch {
+      setCategories([])
+    }
+  }
+
   useEffect(() => {
     loadNodes()
     loadRules()
+    loadCategories()
   }, [])
 
   const selectedNode = useMemo(
@@ -239,19 +497,43 @@ export default function NodeTreePage() {
 
   const roots = useMemo(() => nodes.filter((n) => !n.parent_id).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)), [nodes])
 
+  const canAddChild = selectedNode ? selectedNode.layer < 5 : true
+
+  const handleDelete = async () => {
+    if (!selectedNode) return
+    try {
+      await deleteNode(selectedNode.id)
+      setShowDeleteConfirm(false)
+      setSelectedId('')
+      loadNodes()
+    } catch (e: any) {
+      alert('删除失败：' + (e.message || e))
+    }
+  }
+
   return (
     <div className="flex gap-4 h-[calc(100vh-140px)] min-h-[500px]">
       {/* 左侧节点树 */}
       <div className="neu-card w-80 flex flex-col p-3 overflow-hidden">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-bold text-gray-800">节点树</h2>
-          <button
-            onClick={loadNodes}
-            disabled={loading}
-            className="neu-btn px-2 py-1 text-[10px] text-gray-500 disabled:opacity-50"
-          >
-            刷新
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setNodeFormMode('create')}
+              disabled={!canAddChild}
+              title={canAddChild ? '新建子节点' : '已是最深层级'}
+              className="neu-btn px-2 py-1 text-[10px] font-medium text-[#389e0d] disabled:opacity-40"
+            >
+              + 子节点
+            </button>
+            <button
+              onClick={loadNodes}
+              disabled={loading}
+              className="neu-btn px-2 py-1 text-[10px] text-gray-500 disabled:opacity-50"
+            >
+              刷新
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto table-container pr-1">
           {roots.map((root) => (
@@ -267,7 +549,7 @@ export default function NodeTreePage() {
             />
           ))}
           {roots.length === 0 && !loading && (
-            <div className="text-xs text-gray-400 py-4 text-center">暂无节点</div>
+            <div className="text-xs text-gray-400 py-4 text-center">暂无节点，点击「+ 子节点」创建根节点</div>
           )}
         </div>
       </div>
@@ -291,12 +573,32 @@ export default function NodeTreePage() {
                   </div>
                   <p className="text-xs text-gray-500 mt-1">点位数: {selectedNode.tag_count} · ID: {selectedNode.id}</p>
                 </div>
-                <button
-                  onClick={() => setShowAssignModal(true)}
-                  className="neu-btn px-4 py-1.5 text-xs font-medium text-[#389e0d]"
-                >
-                  指定规则
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowImportModal(true)}
+                    className="neu-btn px-3 py-1.5 text-xs text-gray-600"
+                  >
+                    导入点位
+                  </button>
+                  <button
+                    onClick={() => setNodeFormMode('edit')}
+                    className="neu-btn px-3 py-1.5 text-xs text-gray-600"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="neu-btn px-3 py-1.5 text-xs text-red-500 hover:bg-red-50"
+                  >
+                    删除
+                  </button>
+                  <button
+                    onClick={() => setShowAssignModal(true)}
+                    className="neu-btn px-4 py-1.5 text-xs font-medium text-[#389e0d]"
+                  >
+                    指定规则
+                  </button>
+                </div>
               </div>
 
               {assignedRules.length > 0 && (
@@ -379,6 +681,40 @@ export default function NodeTreePage() {
           onClose={() => setShowAssignModal(false)}
           onSaved={loadNodes}
         />
+      )}
+
+      {nodeFormMode && (
+        <NodeFormModal
+          mode={nodeFormMode}
+          node={nodeFormMode === 'edit' ? selectedNode : undefined}
+          parentNode={nodeFormMode === 'create' ? selectedNode : undefined}
+          categories={categories}
+          onClose={() => setNodeFormMode(null)}
+          onSaved={loadNodes}
+        />
+      )}
+
+      {showImportModal && selectedNode && (
+        <ImportNeuronModal
+          node={selectedNode}
+          onClose={() => setShowImportModal(false)}
+          onSaved={loadNodes}
+        />
+      )}
+
+      {showDeleteConfirm && selectedNode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="neu-card w-[360px] max-w-[90vw] p-5">
+            <h3 className="text-sm font-bold text-gray-800 mb-2">确认删除节点？</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              节点 <span className="font-medium text-gray-700">{selectedNode.name}</span> 及其所有子节点、挂载点位、快照与历史数据将被级联删除，不可恢复。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowDeleteConfirm(false)} className="neu-btn px-4 py-1.5 text-xs text-gray-600">取消</button>
+              <button onClick={handleDelete} className="neu-btn px-4 py-1.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600">删除</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
