@@ -271,6 +271,21 @@ def run_rule_tick() -> dict[str, int]:
     Returns:
         {"evaluated": N, "alarms": N, "controls": N, "errors": N}
     """
+def _apply_input_mappings(context: dict, input_mappings: dict[str, str] | None) -> dict:
+    """按 inputMappings 把真实 tag 名映射为决策表字段名。
+
+    例如 inputMappings={"soc": "bms_soc"}，则把 context["bms_soc"] 复制为 context["soc"]，
+    供 GoRules 决策表使用。
+    """
+    if not input_mappings:
+        return context
+    mapped = dict(context)
+    for field, tag_name in input_mappings.items():
+        if tag_name in context:
+            mapped[field] = context[tag_name]
+    return mapped
+
+
     from app.services.telemetry_store import get_connection
 
     result = {"evaluated": 0, "alarms": 0, "controls": 0, "errors": 0}
@@ -303,7 +318,9 @@ def run_rule_tick() -> dict[str, int]:
                             k: v for k, v in full_context.items()
                             if str(v.get("node_id")) in source_node_ids
                         }
-                    eval_result = evaluate_rule(content, context)
+                    input_mappings = content.get("_config", {}).get("inputMappings", {}) or {}
+                    eval_context = _apply_input_mappings(context, input_mappings)
+                    eval_result = evaluate_rule(content, eval_context)
 
                     if eval_result.get("error"):
                         logger.warning(
