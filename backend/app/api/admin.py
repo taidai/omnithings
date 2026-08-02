@@ -115,7 +115,8 @@ async def execute_sql(req: SqlQueryRequest) -> dict:
 # 3. 清空指定表
 # ══════════════════════════════════════
 
-TRUNCATE_WHITELIST = {'t_telemetry', 't_audit_log'}
+# 前端 DataBrowser / AdminPanel 已支持 t_node_snapshot，加入白名单
+TRUNCATE_WHITELIST = {'t_telemetry', 't_audit_log', 't_node_snapshot'}
 
 
 class TruncateRequest(BaseModel):

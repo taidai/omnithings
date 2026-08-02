@@ -180,8 +180,9 @@ export default function AdminPanel() {
             onChange={(e) => setTruncateTableName(e.target.value)}
             className="neu-input px-3 py-1.5 text-xs bg-transparent"
           >
-            <option value="t_telemetry">t_telemetry (遥测数据)</option>
-            <option value="t_audit_log">t_audit_log (审计日志)</option>
+           <option value="t_telemetry">t_telemetry (遥测数据)</option>
+           <option value="t_audit_log">t_audit_log (审计日志)</option>
+            <option value="t_node_snapshot">t_node_snapshot (节点快照)</option>
           </select>
           <input
             type="text"

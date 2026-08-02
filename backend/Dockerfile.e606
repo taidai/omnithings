@@ -1,0 +1,46 @@
+ # ============================================================
+ # OmniThings e606 内核裁剪版专用镜像
+ #
+ # 与 backend/Dockerfile 区别：
+ #   1. 不现场 build 前端（e606 无法 build，frontend/dist 通过 compose volume 挂载）
+ #   2. 直接安装 zen-engine，支持规则引擎真实评估
+ #   3. 使用 root 运行（与 docker-compose.e606.yml 的 user: root 一致）
+ # ============================================================
+
+ FROM docker.m.daocloud.io/library/python:3.12-slim
+
+ LABEL maintainer="OmniThings Team"
+ LABEL description="OmniThings IoT Platform - e606 ARM64 Backend + Zen Engine"
+ LABEL version="0.1.0"
+
+ WORKDIR /app
+
+ # 系统依赖 (psycopg2 需要 libpq 运行时)
+ RUN apt-get update && apt-get install -y --no-install-recommends \
+         libpq5 \
+         curl \
+     && rm -rf /var/lib/apt/lists/*
+
+ # F0 核心依赖 + F2 规则引擎 (清华镜像加速)
+ RUN pip install --no-cache-dir \
+         -i https://pypi.tuna.tsinghua.edu.cn/simple \
+         fastapi \
+         "uvicorn[standard]" \
+         psycopg2-binary \
+         paho-mqtt \
+         loguru \
+         pydantic \
+         pydantic-settings \
+         pint \
+         websockets \
+         zen-engine
+
+ # 复制后端应用代码
+ COPY backend/app ./app
+
+ EXPOSE 9000
+
+ HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=5 \
+     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/api/v1/health')" || exit 1
+
+ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9000", "--log-level", "info"]

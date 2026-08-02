@@ -53,6 +53,11 @@ RUN pip install --no-cache-dir \
         pint \
         websockets
 
+# F2 规则引擎依赖
+RUN pip install --no-cache-dir \
+        -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        zen-engine
+
 # 复制后端应用代码
 COPY backend/app ./app
 
