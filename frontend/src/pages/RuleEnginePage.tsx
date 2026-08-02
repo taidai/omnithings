@@ -5,13 +5,44 @@ import json5 from 'json5'
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import {
-  fetchRules, createRule, updateRule, deleteRule, simulateRule, evaluateGraph,
-  type Rule, type RuleCreateRequest,
+  fetchRules, fetchNodes, createRule, updateRule, deleteRule, simulateRule, evaluateGraph, writeNeuronTag,
+  type Rule, type RuleCreateRequest, type Node,
 } from '../api/client'
 
 type DecisionGraphType = {
   nodes: any[]
   edges: any[]
+}
+
+type NeuronWriteAction = {
+  type: 'neuron_write'
+  node: string
+  group: string
+  tag: string
+  value: any
+  cooldown?: number
+}
+
+type RuleConfig = {
+  sourceNodeIds: string[]
+  actions: NeuronWriteAction[]
+}
+
+function extractConfig(content: any): RuleConfig {
+  if (content && typeof content === 'object' && content._config) {
+    return {
+      sourceNodeIds: content._config.sourceNodeIds || [],
+      actions: (content._config.actions || []).map((a: any) => ({
+        type: 'neuron_write',
+        node: a.node || '',
+        group: a.group || '',
+        tag: a.tag || '',
+        value: a.value ?? '',
+        cooldown: a.cooldown ?? 60,
+      })),
+    }
+  }
+  return { sourceNodeIds: [], actions: [] }
 }
 
 const RULE_TYPES: RuleCreateRequest['rule_type'][] = ['alarm', 'control', 'fault_map', 'linkage']
@@ -117,10 +148,16 @@ function RuleForm({
   const [ruleType, setRuleType] = useState<RuleCreateRequest['rule_type']>(initial?.rule_type || 'alarm')
   const [enabled, setEnabled] = useState(initial?.enabled ?? true)
   const [graph, setGraph] = useState<DecisionGraphType>(() => ensureGraph(initial?.jdm_content))
+  const [config, setConfig] = useState<RuleConfig>(() => extractConfig(initial?.jdm_content))
+  const [nodes, setNodes] = useState<Node[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [simulate, setSimulate] = useState<any>()
   const [simLoading, setSimLoading] = useState(false)
+
+  useEffect(() => {
+    fetchNodes().then(setNodes).catch(() => {})
+  }, [])
 
   const panels = useMemo(
     () => [
@@ -178,7 +215,8 @@ function RuleForm({
     }
     setSaving(true)
     try {
-      await onSave({ name, rule_type: ruleType, enabled, jdm_content: graph as Record<string, any> })
+      const jdm_content = { ...graph, _config: config }
+      await onSave({ name, rule_type: ruleType, enabled, jdm_content: jdm_content as Record<string, any> })
       onCancel()
     } catch (e: any) {
       setError(e.message || '保存失败')
@@ -248,6 +286,109 @@ function RuleForm({
         </div>
 
         {error && <div className="px-5 text-xs text-red-500 mb-2">{error}</div>}
+
+        <div className="px-5 pb-3 grid grid-cols-12 gap-3">
+          <div className="col-span-5">
+            <label className="block text-xs text-gray-600 mb-1">数据源节点（可多选）</label>
+            <div className="neu-inset w-full h-28 overflow-y-auto p-2 text-xs space-y-1">
+              {nodes.map((n) => (
+                <label key={n.id} className="flex items-center gap-2 cursor-pointer hover:bg-white/50 rounded px-1">
+                  <input
+                    type="checkbox"
+                    checked={config.sourceNodeIds.includes(n.id)}
+                    onChange={(e) => {
+                      const ids = new Set(config.sourceNodeIds)
+                      e.target.checked ? ids.add(n.id) : ids.delete(n.id)
+                      setConfig({ ...config, sourceNodeIds: Array.from(ids) })
+                    }}
+                    className="w-3.5 h-3.5 accent-[#52c41a]"
+                  />
+                  <span className="truncate">{n.name}</span>
+                  <span className="text-[10px] text-gray-400">L{n.layer}</span>
+                </label>
+              ))}
+              {nodes.length === 0 && <div className="text-gray-400">加载中…</div>}
+            </div>
+          </div>
+
+          {(ruleType === 'control' || ruleType === 'linkage') && (
+            <div className="col-span-7">
+              <label className="block text-xs text-gray-600 mb-1">控制动作</label>
+              <div className="neu-inset w-full h-28 overflow-y-auto p-2 text-xs space-y-2">
+                {config.actions.map((action, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                    <input
+                      value={action.node}
+                      onChange={(e) => {
+                        const actions = [...config.actions]
+                        actions[idx] = { ...action, node: e.target.value }
+                        setConfig({ ...config, actions })
+                      }}
+                      placeholder="NE节点"
+                      className="neu-input col-span-3 px-2 py-1"
+                    />
+                    <input
+                      value={action.group}
+                      onChange={(e) => {
+                        const actions = [...config.actions]
+                        actions[idx] = { ...action, group: e.target.value }
+                        setConfig({ ...config, actions })
+                      }}
+                      placeholder="组"
+                      className="neu-input col-span-2 px-2 py-1"
+                    />
+                    <input
+                      value={action.tag}
+                      onChange={(e) => {
+                        const actions = [...config.actions]
+                        actions[idx] = { ...action, tag: e.target.value }
+                        setConfig({ ...config, actions })
+                      }}
+                      placeholder="点位名"
+                      className="neu-input col-span-3 px-2 py-1"
+                    />
+                    <input
+                      value={String(action.value ?? '')}
+                      onChange={(e) => {
+                        const actions = [...config.actions]
+                        actions[idx] = { ...action, value: e.target.value }
+                        setConfig({ ...config, actions })
+                      }}
+                      placeholder="值"
+                      className="neu-input col-span-2 px-2 py-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await writeNeuronTag(action.node, action.group, action.tag, action.value)
+                          alert('下发成功')
+                        } catch (e: any) {
+                          alert(`下发失败: ${e.message || e}`)
+                        }
+                      }}
+                      className="neu-btn col-span-2 px-1 py-1 text-[10px] text-[#389e0d]"
+                    >
+                      测试下发
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setConfig({
+                      ...config,
+                      actions: [...config.actions, { type: 'neuron_write', node: 'tk_db', group: 'meters', tag: '心跳信号', value: 1, cooldown: 60 }],
+                    })
+                  }
+                  className="neu-btn px-2 py-1 text-[10px] text-gray-600"
+                >
+                  + 添加 NE 写点位
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="flex-1 min-h-0 p-5">
           <JdmConfigProvider>

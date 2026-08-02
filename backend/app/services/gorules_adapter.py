@@ -136,6 +136,9 @@ def _extract_triggered(outputs: Any) -> bool:
             return bool(outputs["triggered"])
         if outputs.get("result") is not None:
             return bool(outputs["result"])
+        # 控制命令 / 动作标记也视为触发
+        if outputs.get("command") or outputs.get("neuron_write") or outputs.get("action_type"):
+            return True
         # 决策表输出可能包含 level/message 等字符串，只看布尔/数字字段
         return any(
             bool(v)
@@ -143,6 +146,44 @@ def _extract_triggered(outputs: Any) -> bool:
             if isinstance(v, (bool, int, float)) or (isinstance(v, str) and v.lower() in ("true", "yes", "1"))
         )
     return bool(outputs)
+
+
+def _extract_actions(outputs: Any, jdm_content: dict) -> list[dict]:
+    """从 JDM 输出和规则配置中聚合待执行动作。"""
+    actions: list[dict] = []
+
+    # 1. 顶层显式 actions（向后兼容）
+    actions.extend(list(jdm_content.get("actions", [])))
+
+    # 2. 决策图/表输出里携带的动作字段
+    if isinstance(outputs, dict):
+        cmd = outputs.get("command") or outputs.get("neuron_write")
+        if isinstance(cmd, dict) and cmd.get("node") and cmd.get("group") and cmd.get("tag"):
+            actions.append({"type": "neuron_write", **cmd})
+
+        if any(k.startswith("command.") for k in outputs):
+            action: dict[str, Any] = {"type": "neuron_write"}
+            for k, v in outputs.items():
+                if k.startswith("command."):
+                    action[k.split(".", 1)[1]] = v
+            if action.get("node") and action.get("group") and action.get("tag"):
+                actions.append(action)
+
+        action_type = outputs.get("action_type")
+        level = outputs.get("level")
+        message = outputs.get("message")
+        if action_type or level or message:
+            actions.append({
+                "type": action_type or "alarm",
+                "level": level or "WARNING",
+                "message": message or "rule triggered",
+            })
+
+    # 3. _config 中配置的动作（前端控制动作面板）
+    for a in jdm_content.get("_config", {}).get("actions", []):
+        actions.append(dict(a))
+
+    return actions
 
 
 def _evaluate_expression_zen(expression: str, context: dict[str, Any]) -> bool:
@@ -158,7 +199,8 @@ def _evaluate_jdm_zen(jdm_content: dict, context: dict[str, Any]) -> dict:
     if _zen is None:
         raise RuntimeError("zen-engine not available")
     engine = _zen.ZenEngine()
-    decision = engine.create_decision(jdm_content)
+    clean_content = {k: v for k, v in jdm_content.items() if k not in ("_config", "actions")}
+    decision = engine.create_decision(clean_content)
     outputs = decision.evaluate(context)
     return outputs if isinstance(outputs, dict) else {"result": outputs}
 
@@ -203,20 +245,10 @@ def evaluate_rule(jdm_content: dict, context: dict[str, Any]) -> dict:
                 jdm_ctx = context
             outputs = _evaluate_jdm_zen(jdm_content, jdm_ctx)
             triggered = _extract_triggered(outputs)
-            actions: list[dict] = []
             if triggered:
-                # 优先使用顶层 actions 字段
-                actions = list(jdm_content.get("actions", []))
-                # 如果 outputs 中包含动作字段，动态构造 action
-                action_type = outputs.get("action_type") if isinstance(outputs, dict) else None
-                level = outputs.get("level") if isinstance(outputs, dict) else None
-                message = outputs.get("message") if isinstance(outputs, dict) else None
-                if action_type or level or message:
-                    actions.append({
-                        "type": action_type or "alarm",
-                        "level": level or "WARNING",
-                        "message": message or "rule triggered",
-                    })
+                actions = _extract_actions(outputs, jdm_content)
+            else:
+                actions = []
             return {
                 "triggered": triggered,
                 "actions": actions,

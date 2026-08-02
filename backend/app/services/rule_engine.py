@@ -26,15 +26,25 @@ from loguru import logger
 from app.services.gorules_adapter import evaluate_rule
 
 
-def _build_context(cur) -> dict[str, dict[str, any]]:
-    """从 t_telemetry_latest 构建 tag_name -> {value, tag_id, node_id} 上下文。"""
+def _build_context(cur, source_node_ids: set[str] | None = None) -> dict[str, dict[str, any]]:
+    """从 t_telemetry_latest 构建 tag_name -> {value, tag_id, node_id} 上下文。
+
+    若提供 source_node_ids，则只保留选中节点下的点位。
+    """
+    where = ""
+    params = ()
+    if source_node_ids:
+        where = "WHERE t.node_id = ANY(%s)"
+        params = (list(source_node_ids),)
     cur.execute(
-        """
+        f"""
         SELECT t.id, t.node_id, t.name,
                l.value_float, l.value_int, l.value_bool, l.value_str
         FROM t_telemetry_latest l
         JOIN t_tags t ON t.id = l.tag_id
-        """
+        {where}
+        """,
+        params,
     )
     ctx: dict[str, dict[str, any]] = {}
     for tag_id, node_id, name, value_float, value_int, value_bool, value_str in cur.fetchall():
@@ -127,8 +137,42 @@ def _control_cooldown_ok(rule_id: UUID, cooldown: int = 60) -> bool:
     return False
 
 
+def _execute_neuron_write(cur, rule_id: UUID, action: dict, context: dict) -> bool:
+    """通过 Neuron REST API 下发写点位指令。"""
+    from app.services.neuron_client import get_neuron_client
+
+    node = action.get("node")
+    group = action.get("group")
+    tag = action.get("tag")
+    value = action.get("value")
+    if not node or not group or not tag or value is None:
+        logger.warning("[RuleEngine] neuron_write action missing node/group/tag/value: {}", action)
+        return False
+
+    try:
+        client = get_neuron_client()
+        client.write_tag(node, group, tag, value)
+    except Exception as e:
+        logger.error("[RuleEngine] Neuron write failed for rule {}: {}", rule_id, e)
+        return False
+
+    _log_audit(cur, "NEURON_WRITE", "device", action.get("target_id"), {
+        "rule_id": str(rule_id),
+        "node": node,
+        "group": group,
+        "tag": tag,
+        "value": value,
+        "context": {k: v for k, v in context.items() if isinstance(v, (int, float, bool, str))},
+    })
+    return True
+
+
 def _execute_control(cur, rule_id: UUID, action: dict, context: dict) -> bool:
-    """执行控制动作：发布 MQTT 命令并记录审计日志。"""
+    """执行控制动作：优先走 Neuron 写点位，否则发布 MQTT 命令。"""
+    a_type = action.get("type")
+    if a_type == "neuron_write":
+        return _execute_neuron_write(cur, rule_id, action, context)
+
     from app.services.mqtt_client import get_mqtt_client
 
     command = action.get("command", {})
@@ -197,12 +241,21 @@ def run_rule_tick() -> dict[str, int]:
             if not rules:
                 return result
 
-            context = _build_context(cur)
+            full_context = _build_context(cur)
 
             for rule_id, rule_type, jdm_content, enabled in rules:
                 result["evaluated"] += 1
                 try:
                     content = jdm_content if isinstance(jdm_content, dict) else json.loads(jdm_content)
+                    source_node_ids = set(
+                        str(nid) for nid in content.get("_config", {}).get("sourceNodeIds", []) if nid
+                    )
+                    context = full_context
+                    if source_node_ids:
+                        context = {
+                            k: v for k, v in full_context.items()
+                            if str(v.get("node_id")) in source_node_ids
+                        }
                     eval_result = evaluate_rule(content, context)
 
                     if eval_result.get("error"):
@@ -244,7 +297,7 @@ def run_rule_tick() -> dict[str, int]:
                                     message,
                                 )
                                 result["alarms"] += 1
-                        elif a_type == "control":
+                        elif a_type in ("control", "neuron_write"):
                             if _control_cooldown_ok(rule_id, action.get("cooldown", 60)):
                                 if _execute_control(cur, rule_id, action, context):
                                     result["controls"] += 1

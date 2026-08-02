@@ -194,6 +194,21 @@ class NeuronClient:
         """删除点位。"""
         return self._request("DELETE", f"/api/v2/tag/{node_name}/{group_name}/{tag_name}")
 
+    def write_tag(self, node_name: str, group_name: str, tag_name: str, value) -> dict:
+        """
+        写单个点位。
+
+        Neuron POST /api/v2/write
+        payload: {"node": node_name, "group": group_name, "tag": tag_name, "value": value}
+        """
+        payload = {
+            "node": node_name,
+            "group": group_name,
+            "tag": tag_name,
+            "value": value,
+        }
+        return self._request("POST", "/api/v2/write", json=payload)
+
     # ══════════════════════════════════════
     # 状态监控
     # ══════════════════════════════════════

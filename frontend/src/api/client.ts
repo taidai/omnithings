@@ -281,6 +281,19 @@ export async function fetchNeuronTags(node: string, group: string): Promise<Neur
   return data.tags || []
 }
 
+export async function writeNeuronTag(node: string, group: string, tag: string, value: any): Promise<any> {
+  const res = await fetch(`${API_BASE}/neuron/write`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node, group, tag, value }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `Write tag failed: ${res.status}`)
+  }
+  return res.json()
+}
+
 // ── Category API ──
 
 export async function fetchCategories(): Promise<Category[]> {

@@ -5,6 +5,8 @@ Neuron Proxy API — Neuron 代理接口
 """
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -37,6 +39,13 @@ class NeuronTagCreate(BaseModel):
     name: str = Field(..., description="点位名称")
     address: str = Field(..., description="寄存器地址")
     data_type: str = Field("FLOAT", description="数据类型")
+
+
+class NeuronWriteRequest(BaseModel):
+    node: str = Field(..., description="Neuron 南向节点名")
+    group: str = Field(..., description="采集组名")
+    tag: str = Field(..., description="点位名")
+    value: Any = Field(..., description="写入值")
 
 
 # ══════════════════════════════════════
@@ -257,3 +266,17 @@ async def get_neuron_status() -> dict:
     except Exception as e:
         logger.error("[API/neuron] Get status failed: {}", e)
         return {"error": str(e)}
+@router.post("/neuron/write")
+async def write_neuron_tag(req: NeuronWriteRequest) -> dict:
+    """通过 Neuron REST API 写单个点位。"""
+    from app.services.neuron_client import get_neuron_client
+
+    try:
+        client = get_neuron_client()
+        result = client.write_tag(req.node, req.group, req.tag, req.value)
+        logger.info("[API/neuron] Write tag: {}/{} tag={} value={}", req.node, req.group, req.tag, req.value)
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        logger.error("[API/neuron] Write tag failed: {}", e)
+        raise HTTPException(status_code=400, detail=str(e))
+
