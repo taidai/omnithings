@@ -18,6 +18,7 @@ export interface Node {
   sort_order: number
   enabled: boolean
   tag_count: number
+  config?: Record<string, any>
 }
 
 export interface Tag {
@@ -582,137 +583,166 @@ export function connectTelemetryWS(
   }
 }
 
-// ── F2 Rules API ──
+// ── Node Config Update ──
+
+export interface NodeUpdateRequest {
+  name?: string
+  node_type?: string
+  sort_order?: number
+  enabled?: boolean
+  config?: Record<string, any>
+}
+
+export async function updateNode(nodeId: string, updates: NodeUpdateRequest): Promise<Node> {
+  const res = await fetch(`${API_BASE}/nodes/${nodeId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) throw new Error(`Update node failed: ${res.status}`)
+  const data = await res.json()
+  return data.node || data
+}
+
+// ── Rules ──
 
 export interface Rule {
   id: string
   name: string
-  rule_type: 'alarm' | 'control' | 'linkage'
-  jdm_content: any
+  rule_type: 'alarm' | 'control' | 'fault_map' | 'linkage'
+  jdm_content: Record<string, any>
+  version: number
   enabled: boolean
-  created_at: string | null
+  created_at: string
+  updated_at: string
 }
 
-export interface RuleCreateInput {
+export interface RuleCreateRequest {
   name: string
-  rule_type: string
-  jdm_content: any
+  rule_type: Rule['rule_type']
+  jdm_content?: Record<string, any>
   enabled?: boolean
 }
 
 export async function fetchRules(): Promise<Rule[]> {
   const res = await fetch(`${API_BASE}/rules`)
-  if (!res.ok) throw new Error(`Fetch rules failed: ${res.status}`)
   const data = await res.json()
   return data.rules || []
 }
 
-export async function createRule(input: RuleCreateInput): Promise<{ id: string }> {
-  const res = await fetch(`${API_BASE}/rules`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Create rule failed: ${res.status}`)
-  }
+export async function fetchRule(ruleId: string): Promise<Rule> {
+  const res = await fetch(`${API_BASE}/rules/${ruleId}`)
+  if (!res.ok) throw new Error(`Fetch rule failed: ${res.status}`)
   return res.json()
 }
 
-export async function updateRule(ruleId: string, updates: { jdm_content?: any; enabled?: boolean }): Promise<void> {
-  const res = await fetch(`${API_BASE}/rules/${ruleId}/jdm`, {
+export async function createRule(rule: RuleCreateRequest): Promise<Rule> {
+  const res = await fetch(`${API_BASE}/rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rule),
+  })
+  if (!res.ok) throw new Error(`Create rule failed: ${res.status}`)
+  return res.json()
+}
+
+export async function updateRule(ruleId: string, updates: Partial<RuleCreateRequest>): Promise<Rule> {
+  const res = await fetch(`${API_BASE}/rules/${ruleId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
   })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Update rule failed: ${res.status}`)
-  }
+  if (!res.ok) throw new Error(`Update rule failed: ${res.status}`)
+  return res.json()
 }
 
 export async function deleteRule(ruleId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/rules/${ruleId}`, { method: 'DELETE' })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Delete rule failed: ${res.status}`)
-  }
+  const res = await fetch(`${API_BASE}/rules/${ruleId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`Delete rule failed: ${res.status}`)
 }
 
-export interface RuleSimulateResult {
-  rule_id: string
-  rule_type: string
-  when: string
-  context: Record<string, any>
-  triggered: boolean
-  actions: any[]
-  outputs?: Record<string, any>
-  engine?: string
-}
-
-export async function simulateRule(ruleId: string, context: Record<string, any>): Promise<RuleSimulateResult> {
+export async function simulateRule(ruleId: string, context: Record<string, any>): Promise<any> {
   const res = await fetch(`${API_BASE}/rules/${ruleId}/simulate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ context }),
   })
+  if (!res.ok) throw new Error(`Simulate rule failed: ${res.status}`)
+  return res.json()
+}
+
+export async function evaluateGraph(graph: Record<string, any>, context: Record<string, any>): Promise<any> {
+  const res = await fetch(`${API_BASE}/rules/evaluate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: graph, context }),
+  })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Simulate rule failed: ${res.status}`)
+    const text = await res.text()
+    throw new Error(text || `Evaluate graph failed: ${res.status}`)
   }
   return res.json()
 }
 
-// ── F2 Alarms API ──
+// ── Alarms ──
+
+export type AlarmLevel = 'INFO' | 'WARNING' | 'MAJOR' | 'CRITICAL'
 
 export interface Alarm {
   id: string
   rule_id: string | null
-  rule_name: string | null
+  rule_name?: string
   node_id: string | null
-  node_name: string | null
-  tag_id: string | null
-  tag_name: string | null
-  trigger_value: number | null
-  level: string
+  node_name?: string
+  level: AlarmLevel
   message: string
   acknowledged: boolean
   ack_user: string | null
   ack_at: string | null
-  created_at: string | null
+  created_at: string
   resolved_at: string | null
 }
 
-export async function fetchAlarms(params?: {
-  level?: string
-  acknowledged?: boolean
-  active?: boolean
-  limit?: number
-  offset?: number
-}): Promise<{ alarms: Alarm[]; total: number }> {
-  const qs = new URLSearchParams()
-  if (params?.level) qs.set('level', params.level)
-  if (params?.acknowledged !== undefined) qs.set('acknowledged', String(params.acknowledged))
-  if (params?.active !== undefined) qs.set('active', String(params.active))
-  if (params?.limit) qs.set('limit', String(params.limit))
-  if (params?.offset) qs.set('offset', String(params.offset))
-  const res = await fetch(`${API_BASE}/alarms?${qs.toString()}`)
+export interface AlarmListResponse {
+  alarms: Alarm[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export async function fetchAlarms(
+  page = 1,
+  pageSize = 50,
+  level?: AlarmLevel,
+  acknowledged?: boolean,
+  resolved?: boolean,
+  nodeId?: string,
+): Promise<AlarmListResponse> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  if (level) params.set('level', level)
+  if (acknowledged !== undefined) params.set('acknowledged', String(acknowledged))
+  if (resolved !== undefined) params.set('resolved', String(resolved))
+  if (nodeId) params.set('node_id', nodeId)
+  const res = await fetch(`${API_BASE}/alarms?${params}`)
   if (!res.ok) throw new Error(`Fetch alarms failed: ${res.status}`)
   return res.json()
 }
 
-export async function ackAlarm(alarmId: string, ackUser: string): Promise<void> {
+export async function acknowledgeAlarm(alarmId: string, ackUser = 'operator'): Promise<void> {
   const res = await fetch(`${API_BASE}/alarms/${alarmId}/acknowledge`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ack_user: ackUser }),
   })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Ack alarm failed: ${res.status}`)
-  }
+  if (!res.ok) throw new Error(`Acknowledge alarm failed: ${res.status}`)
 }
 
-
-
+export async function resolveAlarm(alarmId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/alarms/${alarmId}/resolve`, {
+    method: 'PUT',
+  })
+  if (!res.ok) throw new Error(`Resolve alarm failed: ${res.status}`)
+}

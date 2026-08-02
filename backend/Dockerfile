@@ -57,6 +57,11 @@ RUN pip install --no-cache-dir \
         "apscheduler[asyncio,timezone]>=3.10.4" \
         "pyyaml>=6.0.2"
 
+# F2 规则引擎依赖
+RUN pip install --no-cache-dir \
+        -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        zen-engine
+
 # 复制后端应用代码
 COPY backend/app ./app
 

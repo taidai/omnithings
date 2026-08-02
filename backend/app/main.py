@@ -195,14 +195,11 @@ def create_app() -> FastAPI:
     from app.api.categories import router as categories_router
     app.include_router(categories_router, prefix="/api/v1", tags=["Categories"])
 
-    # ---- F2 控制域 ----
-    from app.api import rules as rules_router
-    from app.api import alarms as alarms_router
-    from app.api import rpc as rpc_router
+    from app.api.rules import router as rules_router
+    app.include_router(rules_router, prefix="/api/v1", tags=["Rules"])
 
-    app.include_router(rules_router.router, prefix="/api/v1", tags=["F2 Rules"])
-    app.include_router(alarms_router.router, prefix="/api/v1", tags=["F2 Alarms"])
-    app.include_router(rpc_router.router, prefix="/api/v1", tags=["F2 RPC"])
+    from app.api.alarms import router as alarms_router
+    app.include_router(alarms_router, prefix="/api/v1", tags=["Alarms"])
 
     # ---- Static Frontend (F0 可视化 V1) ----
     # 后端直接托管前端 dist，无需独立 nginx 容器
