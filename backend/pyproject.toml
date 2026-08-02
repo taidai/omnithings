@@ -5,7 +5,7 @@
 
 [project]
 name = "omnithings-backend"
-version = "0.4.0"
+version = "0.4.3"
 description = "OmniThings IoT Platform - 替代 ThingsBoard 的工业 IoT 开发平台"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -49,4 +49,5 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+
 

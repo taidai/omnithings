@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 import sys
+from pathlib import Path
 
 # 配置 loguru
 logger.remove()
@@ -34,6 +35,21 @@ AGGREGATION_INTERVAL_SEC = 10
 FORMULA_INTERVAL_SEC = 5
 # F2 规则 tick 间隔 (秒)
 RULE_INTERVAL_SEC = 10
+
+
+def _load_version() -> str:
+    """从当前文件所在目录向上查找 VERSION 文件。"""
+    here = Path(__file__).resolve().parent
+    candidates = [here / "VERSION"]
+    for parent in here.parents:
+        candidates.append(parent / "VERSION")
+    for cand in candidates:
+        if cand.exists():
+            return cand.read_text().strip()
+    return "0.0.0"
+
+
+APP_VERSION = _load_version()
 
 
 @asynccontextmanager
@@ -148,7 +164,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="OmniThings API",
         description="OmniThings IoT Platform - 替代 ThingsBoard 的工业 IoT 开发平台",
-        version="0.4.0",
+        version=APP_VERSION,
         lifespan=lifespan,
         docs_url="/api/docs",
         redoc_url="/api/redoc",

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter
 from loguru import logger
+from pathlib import Path
 
 router = APIRouter()
 
@@ -20,6 +21,20 @@ _start_time: float = time.monotonic()
 # Global reference to the pipeline (set by main.py lifespan)
 _pipeline = None
 
+def _load_version() -> str:
+    """从当前目录向上查找 VERSION 文件；失败时返回 0.0.0。"""
+    here = Path(__file__).resolve().parent
+    candidates = [here / "VERSION"]
+    for parent in here.parents:
+        candidates.append(parent / "VERSION")
+    for p in candidates:
+        if p.exists():
+            return p.read_text().strip()
+    logger.warning("VERSION file not found, fallback to 0.0.0")
+    return "0.0.0"
+
+
+_VERSION = _load_version()
 
 def set_pipeline(pipeline) -> None:
     """由 main.py 在启动时注入 pipeline 实例。"""
@@ -104,7 +119,7 @@ async def health_check() -> dict:
 
     return {
         "status": overall,
-        "version": "0.4.0",
+        "version": _VERSION,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime_seconds": round(time.monotonic() - _start_time, 2),
         "components": {

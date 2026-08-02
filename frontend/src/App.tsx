@@ -78,7 +78,8 @@ export default function App() {
           ))}
         </nav>
         <div className="mt-auto px-2 pb-1 text-[10px] text-gray-400">
-          融合：节点快照 + 点位管理
+          <div>融合：节点快照 + 点位管理</div>
+          <div className="mt-1 font-mono-value">FE {__APP_VERSION__}</div>
         </div>
       </aside>
 
