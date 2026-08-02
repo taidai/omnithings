@@ -54,36 +54,39 @@ const TYPE_LABELS: Record<RuleCreateRequest['rule_type'], string> = {
   linkage: '联动 linkage',
 }
 
-// 默认 GoRules 动态定价教程示例：运费决策表
+// 默认规则：光储充（PV + ESS + EVSE）调度决策表
 const defaultGraph = (): DecisionGraphType => ({
   nodes: [
     {
       id: 'input-1',
       type: 'inputNode',
-      name: 'Request',
+      name: 'Site Telemetry',
       position: { x: 70, y: 250 },
     },
     {
       id: 'table-1',
       type: 'decisionTableNode',
-      name: 'Shipping Fees',
+      name: 'Energy Dispatch',
       position: { x: 370, y: 250 },
       content: {
         hitPolicy: 'first',
         inputs: [
-          { id: 'country', name: 'Customer Country', field: 'customer.country' },
-          { id: 'totals', name: 'Cart Totals', field: 'cart.totals' },
+          { id: 'soc', name: 'SOC %', field: 'soc' },
+          { id: 'pv_power', name: 'PV Power kW', field: 'pv_power' },
+          { id: 'load_power', name: 'Load kW', field: 'load_power' },
+          { id: 'tou_price', name: 'TOU Price', field: 'tou_price' },
         ],
         outputs: [
-          { id: 'flat', name: 'Fees Flat', field: 'fees.flat' },
-          { id: 'percent', name: 'Fees Percent', field: 'fees.percent' },
+          { id: 'pcs_setpoint', name: 'PCS Setpoint kW', field: 'pcs_setpoint' },
+          { id: 'evse_current', name: 'EV Current A', field: 'evse_current' },
+          { id: 'strategy', name: 'Strategy', field: 'strategy' },
         ],
         rules: [
-          { _id: 'r1', country: '"US"', totals: '> 1000', flat: '', percent: '2', _description: 'US orders over $1000' },
-          { _id: 'r2', country: '"US"', totals: '', flat: '30', percent: '', _description: 'US orders under $1000' },
-          { _id: 'r3', country: '"CA","MX"', totals: '> 1000', flat: '', percent: '5', _description: 'CA/MX orders over $1000' },
-          { _id: 'r4', country: '"CA","MX"', totals: '', flat: '50', percent: '', _description: 'CA/MX orders under $1000' },
-          { _id: 'r5', country: '', totals: '', flat: '150', percent: '', _description: 'Rest of the world' },
+          { _id: 'r1', soc: '< 10', pv_power: '*', load_power: '*', tou_price: '*', pcs_setpoint: '0', evse_current: '0', strategy: '"电池亏电保护"' },
+          { _id: 'r2', soc: '> 95', pv_power: '*', load_power: '*', tou_price: '*', pcs_setpoint: '0', evse_current: '16', strategy: '"电池充满，光伏直供"' },
+          { _id: 'r3', soc: '*', pv_power: '> load_power', tou_price: '< 0.4', load_power: '*', pcs_setpoint: '-min(pv_power - load_power, 50)', evse_current: '16', strategy: '"光伏富余，低价储充"' },
+          { _id: 'r4', soc: '*', pv_power: '< load_power', tou_price: '> 0.8', load_power: '*', pcs_setpoint: 'min(load_power - pv_power, 50)', evse_current: '8', strategy: '"高电价放电+限充"' },
+          { _id: 'r5', soc: '*', pv_power: '*', load_power: '*', tou_price: '*', pcs_setpoint: 'pv_power - load_power', evse_current: '16', strategy: '"默认自发自用"' },
         ],
         passThrough: false,
         inputField: null,
@@ -94,7 +97,7 @@ const defaultGraph = (): DecisionGraphType => ({
     {
       id: 'output-1',
       type: 'outputNode',
-      name: 'Response',
+      name: 'Dispatch Command',
       position: { x: 670, y: 250 },
     },
   ],
@@ -169,7 +172,7 @@ function RuleForm({
         renderPanel: () => (
           <GraphSimulator
             defaultRequest={json5.stringify(
-              { customer: { country: 'US' }, cart: { totals: 1500 } },
+              { pv_power: 120, load_power: 80, soc: 45, tou_price: 0.35 },
               null,
               2,
             )}
@@ -361,6 +364,10 @@ function RuleForm({
                       type="button"
                       onClick={async () => {
                         try {
+                          const v = action.value
+                          if (typeof v === 'string' && v.includes('{{')) {
+                            if (!confirm('当前值为模板，测试下发会写入字面量，确定继续？')) return
+                          }
                           await writeNeuronTag(action.node, action.group, action.tag, action.value)
                           alert('下发成功')
                         } catch (e: any) {
@@ -378,7 +385,7 @@ function RuleForm({
                   onClick={() =>
                     setConfig({
                       ...config,
-                      actions: [...config.actions, { type: 'neuron_write', node: 'tk_db', group: 'meters', tag: '心跳信号', value: 1, cooldown: 60 }],
+                      actions: [...config.actions, { type: 'neuron_write', node: 'tk_db', group: 'meters', tag: 'PCS功率设定', value: '{{pcs_setpoint}}', cooldown: 60 }],
                     })
                   }
                   className="neu-btn px-2 py-1 text-[10px] text-gray-600"
@@ -418,7 +425,7 @@ function SimulateModal({
   rule: Rule
   onClose: () => void
 }) {
-  const [context, setContext] = useState('{"customer": {"country": "US"}, "cart": {"totals": 1500}}')
+  const [context, setContext] = useState('{"pv_power": 120, "load_power": 80, "soc": 45, "tou_price": 0.35}')
   const [result, setResult] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -454,7 +461,7 @@ function SimulateModal({
           onChange={(e) => setContext(e.target.value)}
           rows={6}
           className="neu-input w-full px-3 py-2 text-xs font-mono mb-3"
-          placeholder='{"customer": {"country": "US"}, "cart": {"totals": 1500}}'
+          placeholder='{"pv_power": 120, "load_power": 80, "soc": 45, "tou_price": 0.35}'
         />
         <div className="flex justify-between items-center">
           <button

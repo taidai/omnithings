@@ -137,17 +137,64 @@ def _control_cooldown_ok(rule_id: UUID, cooldown: int = 60) -> bool:
     return False
 
 
-def _execute_neuron_write(cur, rule_id: UUID, action: dict, context: dict) -> bool:
+def _resolve_value(value: Any, outputs: dict | None, context_values: dict[str, Any]) -> Any:
+    """解析 value 模板，如 {{pcs_setpoint}}。优先从决策输出取，其次从上下文取。"""
+    if not isinstance(value, str):
+        return value
+    tmpl_re = re.compile(r"\{\{\s*([a-zA-Z0-9_\.]+)\s*\}\}")
+    if not tmpl_re.search(value):
+        return value
+
+    def repl(match: re.Match) -> str:
+        key = match.group(1)
+        if outputs and key in outputs and outputs[key] is not None:
+            return str(outputs[key])
+        if key in context_values and context_values[key] is not None:
+            return str(context_values[key])
+        return match.group(0)
+
+    resolved = tmpl_re.sub(repl, value)
+    single = tmpl_re.fullmatch(value)
+    if single:
+        try:
+            if "." in resolved:
+                return float(resolved)
+            return int(resolved)
+        except ValueError:
+            return resolved
+    return resolved
+
+
+def _coerce_neuron_value(value: Any) -> Any:
+    """把字符串数字转为数值，方便 Neuron 写入。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        try:
+            if "." in value:
+                return float(value)
+            return int(value)
+        except ValueError:
+            pass
+    return value
+
+
+def _execute_neuron_write(cur, rule_id: UUID, action: dict, context: dict, outputs: dict | None = None) -> bool:
     """通过 Neuron REST API 下发写点位指令。"""
     from app.services.neuron_client import get_neuron_client
 
     node = action.get("node")
     group = action.get("group")
     tag = action.get("tag")
-    value = action.get("value")
-    if not node or not group or not tag or value is None:
+    raw_value = action.get("value")
+    if not node or not group or not tag or raw_value is None:
         logger.warning("[RuleEngine] neuron_write action missing node/group/tag/value: {}", action)
         return False
+
+    context_values = _context_values(context)
+    value = _coerce_neuron_value(_resolve_value(raw_value, outputs, context_values))
 
     try:
         client = get_neuron_client()
@@ -167,11 +214,11 @@ def _execute_neuron_write(cur, rule_id: UUID, action: dict, context: dict) -> bo
     return True
 
 
-def _execute_control(cur, rule_id: UUID, action: dict, context: dict) -> bool:
+def _execute_control(cur, rule_id: UUID, action: dict, context: dict, outputs: dict | None = None) -> bool:
     """执行控制动作：优先走 Neuron 写点位，否则发布 MQTT 命令。"""
     a_type = action.get("type")
     if a_type == "neuron_write":
-        return _execute_neuron_write(cur, rule_id, action, context)
+        return _execute_neuron_write(cur, rule_id, action, context, outputs)
 
     from app.services.mqtt_client import get_mqtt_client
 
@@ -299,7 +346,7 @@ def run_rule_tick() -> dict[str, int]:
                                 result["alarms"] += 1
                         elif a_type in ("control", "neuron_write"):
                             if _control_cooldown_ok(rule_id, action.get("cooldown", 60)):
-                                if _execute_control(cur, rule_id, action, context):
+                                if _execute_control(cur, rule_id, action, context, eval_result.get("outputs")):
                                     result["controls"] += 1
                         else:
                             logger.debug("[RuleEngine] unsupported action type: {}", a_type)
