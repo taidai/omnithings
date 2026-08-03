@@ -13,6 +13,7 @@ F0 Hook 3 — 时序存储引擎 (M4)
 """
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from datetime import datetime
 from enum import Enum
@@ -124,12 +125,14 @@ async def batch_insert_telemetry(
             r.quality or Quality.GOOD.value,
         ))
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            execute_values(cur, _INSERT_SQL, rows)
-            conn.commit()
-            inserted = cur.rowcount  # INSERT 后 rowcount 就是受影响行数
+    def _insert():
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                execute_values(cur, _INSERT_SQL, rows)
+                conn.commit()
+                return cur.rowcount
 
+    inserted = await asyncio.to_thread(_insert)
     logger.debug("[TSDB] Batch insert {} records", inserted)
     return inserted
 
@@ -200,12 +203,14 @@ async def batch_insert_snapshots(
             r.quality or Quality.GOOD.value,
         ))
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            execute_values(cur, _SNAPSHOT_INSERT_SQL, rows)
-            conn.commit()
-            inserted = cur.rowcount
+    def _insert():
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                execute_values(cur, _SNAPSHOT_INSERT_SQL, rows)
+                conn.commit()
+                return cur.rowcount
 
+    inserted = await asyncio.to_thread(_insert)
     logger.debug("[TSDB] Batch insert {} snapshots", inserted)
     return inserted
 
@@ -262,12 +267,14 @@ async def upsert_telemetry_latest(
             r.quality or Quality.GOOD.value,
         ))
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            execute_values(cur, _LATEST_UPSERT_SQL, rows)
-            conn.commit()
-            upserted = cur.rowcount
+    def _upsert():
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                execute_values(cur, _LATEST_UPSERT_SQL, rows)
+                conn.commit()
+                return cur.rowcount
 
+    upserted = await asyncio.to_thread(_upsert)
     logger.debug("[TSDB] Latest upsert {} records (deduped from {})", upserted, len(records))
     return upserted
 

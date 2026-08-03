@@ -66,7 +66,11 @@ class DataPipeline:
         self._buffer: list[TelemetryRecord] = []
         self._snapshot_buffer: list[NodeSnapshotRecord] = []
         self._buffer_lock = asyncio.Lock()
+        self._flush_lock = asyncio.Lock()  # 串行化 flush，避免连接池耗尽
         self._flush_task: asyncio.Task | None = None
+
+        # ---- tag 规则动态重载 ----
+        self._reload_task: asyncio.Task | None = None
 
         # ---- 节点状态缓存 (全量快照) ----
         # {node_name: {tag_name: (eng_value, raw_value)}}
@@ -100,6 +104,9 @@ class DataPipeline:
         # Step 4: 启动批量写入 flush 定时任务
         self._flush_task = asyncio.create_task(self._periodic_flush())
 
+        # Step 5: 启动 tag 规则动态重载任务
+        self._reload_task = asyncio.create_task(self._periodic_reload_rules())
+
         self.metrics.status = PipelineStatus.RUNNING
         logger.success(
             "[Pipeline] F0 pipeline running ✅  rules={}, nodes={}, tags={}",
@@ -112,6 +119,14 @@ class DataPipeline:
         """优雅停止。"""
         logger.info("[Pipeline] Stopping F0 data pipeline ...")
         self.metrics.status = PipelineStatus.STOPPING
+
+        # 停止 reload task
+        if self._reload_task and not self._reload_task.done():
+            self._reload_task.cancel()
+            try:
+                await self._reload_task
+            except asyncio.CancelledError:
+                pass
 
         # 停止 flush task
         if self._flush_task and not self._flush_task.done():
@@ -187,7 +202,8 @@ class DataPipeline:
             should_flush = len(self._buffer) >= settings.pipeline_batch_size
 
         if should_flush:
-            await self._do_flush()
+            async with self._flush_lock:
+                await self._do_flush()
 
         # ══════════════════════════════════════
         # CE 三条路径 (按需激活, F0 阶段全部透传)
@@ -306,36 +322,43 @@ class DataPipeline:
         )
 
     async def _load_tag_rules(self) -> None:
-        """从 t_tags 表加载归一化规则和 ID 映射。"""
+        """从 t_tags 表加载归一化规则和 ID 映射。
+
+        新规则先在本地 dict 构建，最后原子替换，避免重载期间 on_message 读到中间状态。
+        DB 查询部分是同步阻塞的，在线程池中执行。
+        """
         try:
             from app.services.telemetry_store import get_connection
 
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT t.name AS tag_name,
-                               n.name AS node_name,
-                               t.id AS tag_id,
-                               n.id AS node_id,
-                               t.data_type,
-                               t.scale_factor,
-                               t.value_offset,
-                               t.unit_from,
-                               t.unit_to,
-                               t.range_min,
-                               t.range_max,
-                               t.source_type,
-                               t.source_path
-                        FROM t_tags t
-                        JOIN t_nodes n ON t.node_id = n.id
-                        WHERE t.enabled = true AND n.enabled = true;
-                    """)
-                    rows = cur.fetchall()
+            def _fetch() -> list:
+                with get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            SELECT t.name AS tag_name,
+                                   n.name AS node_name,
+                                   t.id AS tag_id,
+                                   n.id AS node_id,
+                                   t.data_type,
+                                   t.scale_factor,
+                                   t.value_offset,
+                                   t.unit_from,
+                                   t.unit_to,
+                                   t.range_min,
+                                   t.range_max,
+                                   t.source_type,
+                                   t.source_path
+                            FROM t_tags t
+                            JOIN t_nodes n ON t.node_id = n.id
+                            WHERE t.enabled = true AND n.enabled = true;
+                        """)
+                        return cur.fetchall()
 
-            self._rules.clear()
-            self._node_id_map.clear()
-            self._tag_id_map.clear()
-            self._neuron_tag_map.clear()
+            rows = await asyncio.to_thread(_fetch)
+
+            new_rules: dict[str, TagNormalizationRule] = {}
+            new_node_id_map: dict[str, UUID] = {}
+            new_tag_id_map: dict[str, UUID] = {}
+            new_neuron_tag_map: dict[tuple[str, str, str], tuple[UUID, UUID, TagNormalizationRule]] = {}
 
             for row in rows:
                 (tag_name, node_name, tag_id, node_id, data_type,
@@ -352,21 +375,24 @@ class DataPipeline:
                     range_min=range_min,
                     range_max=range_max,
                 )
-                # 归一化规则
-                self._rules[tag_name] = rule
-                # ID 映射
-                self._node_id_map[node_name] = node_id
-                self._tag_id_map[tag_name] = tag_id
+                new_rules[tag_name] = rule
+                new_node_id_map[node_name] = node_id
+                new_tag_id_map[tag_name] = tag_id
 
-                # Neuron 点位：按 source_path 精确路由
                 if source_type == "neuron" and source_path:
                     parts = source_path.split("/")
                     if len(parts) >= 3:
                         neuron_node, neuron_group = parts[0], parts[1]
                         neuron_tag_name = "/".join(parts[2:])
-                        self._neuron_tag_map[(neuron_node, neuron_group, neuron_tag_name)] = (
+                        new_neuron_tag_map[(neuron_node, neuron_group, neuron_tag_name)] = (
                             node_id, tag_id, rule
                         )
+
+            # 原子替换
+            self._rules = new_rules
+            self._node_id_map = new_node_id_map
+            self._tag_id_map = new_tag_id_map
+            self._neuron_tag_map = new_neuron_tag_map
 
             logger.info(
                 "[Pipeline] Loaded {} tag rules, {} neuron source-path mappings",
@@ -374,14 +400,24 @@ class DataPipeline:
             )
 
         except Exception as e:
-            logger.warning("[Pipeline] Failed to load tag rules (DB may not be ready): {}", e)
+            logger.warning("[Pipeline] Failed to load tag rules: {}", e)
+
+    async def _periodic_reload_rules(self) -> None:
+        """定时重载 tag 规则，让新导入点位无需重启即可生效。"""
+        while True:
+            await asyncio.sleep(settings.pipeline_reload_rules_interval_sec)
+            try:
+                await self._load_tag_rules()
+            except Exception as e:
+                logger.warning("[Pipeline] Periodic reload rules failed: {}", e)
 
     async def _periodic_flush(self) -> None:
         """定时 flush 缓冲区到 DB。"""
         while True:
             await asyncio.sleep(settings.pipeline_flush_interval_sec)
             if self._buffer or self._snapshot_buffer:
-                await self._do_flush()
+                async with self._flush_lock:
+                    await self._do_flush()
 
     async def _do_flush(self) -> None:
         """执行实际写入 (t_telemetry + t_node_snapshot)。"""

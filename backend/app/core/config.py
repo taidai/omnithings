@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     # 批量写入 TSDB 的条数阈值 (攒够 N 条或 T 秒就 flush)
     pipeline_batch_size: int = 50
     pipeline_flush_interval_sec: float = 1.0
+    # tag 规则/映射动态重载间隔 (秒)；导入新点位后无需重启即可生效
+    pipeline_reload_rules_interval_sec: float = 30.0
     # CE Path C 跨节点聚合调度间隔
     ce_aggregation_interval_sec: float = 10.0
 
