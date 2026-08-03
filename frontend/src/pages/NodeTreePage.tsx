@@ -6,8 +6,10 @@ import {
 } from '../api/client'
 import NodeTagPanel from '../components/NodeTagPanel'
 import NodeSnapshotPanel from '../components/NodeSnapshotPanel'
+import NodeRealtimePanel from '../components/NodeRealtimePanel'
+import NodeHistoryPanel from '../components/NodeHistoryPanel'
 
-type TabKey = 'overview' | 'tags' | 'snapshots'
+type TabKey = 'overview' | 'realtime' | 'history' | 'tags' | 'snapshots'
 type FormMode = 'create' | 'edit'
 
 const LAYER_NAMES: Record<number, string> = {
@@ -715,6 +717,8 @@ export default function NodeTreePage() {
                   </div>
                 </div>
               )}
+              {activeTab === 'realtime' && <NodeRealtimePanel nodeId={selectedNode.id} />}
+              {activeTab === 'history' && <NodeHistoryPanel nodeId={selectedNode.id} />}
               {activeTab === 'tags' && <NodeTagPanel nodeId={selectedNode.id} />}
               {activeTab === 'snapshots' && <NodeSnapshotPanel nodeId={selectedNode.id} />}
             </div>

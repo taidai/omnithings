@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response
+from psycopg2.extras import Json
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -298,7 +299,7 @@ async def update_node(node_id: UUID, req: NodeUpdateRequest) -> dict:
             for field, value in data.items():
                 if field == "config":
                     updates.append("config = %s")
-                    params.append(value)
+                    params.append(Json(value))
                 else:
                     updates.append(f"{field} = %s")
                     params.append(value)
@@ -359,7 +360,7 @@ async def create_node(req: NodeCreate) -> dict:
                     parent_id,
                     layer,
                     req.node_type or "",
-                    req.config or {},
+                    Json(req.config or {}),
                     req.sort_order or 0,
                     req.enabled,
                     datetime.now(timezone.utc),
