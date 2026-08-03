@@ -116,9 +116,11 @@ export default function App() {
       <main className="flex-1 p-6 overflow-auto min-w-0">
         <PipelineBar health={health} />
         <div className="mt-4">
-          {activePage === 'tree' && <NodeTreePage />}
-          {activePage === 'rules' && <RuleEnginePage />}
-          {activePage === 'alarms' && <AlarmCenterPage />}
+          <Suspense fallback={<PageLoader />}>
+            {activePage === 'tree' && <NodeTreePage />}
+            {activePage === 'rules' && <RuleEnginePage />}
+            {activePage === 'alarms' && <AlarmCenterPage />}
+          </Suspense>
           {activePage === 'admin' && <AdminPanel />}
         </div>
       </main>
