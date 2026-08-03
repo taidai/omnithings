@@ -35,6 +35,7 @@ class TagUpdateRequest(BaseModel):
     read_write: str | None = Field(None, pattern="^[RrWw]+$", description="读写权限")
     enabled: bool | None = Field(None, description="是否启用")
     description: str | None = Field(None, description="描述")
+    source_type: str | None = Field(None, description="来源类型：neuron / manual / opcua / modbus 等")
     source_path: str | None = Field(None, description="来源路径")
     # LogicalTag 汇总规则字段 (S11)
     aggregate_fn: str | None = Field(None, description="聚合函数 SUM/AVG/MAX/MIN/COUNT/LAST")
@@ -194,6 +195,7 @@ async def list_tags(
         t.id, t.node_id, t.name, t.display_name, t.data_type, t.tag_type,
         t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
         t.read_write, t.enabled, t.description,
+        t.aggregate_fn, t.formula, t.formula_type, t.sources,
         n.name AS node_name,
         -- 最新值缓存表 (value_* 列由 Python 层按 data_type 转换)
         latest.ts AS latest_ts,
@@ -355,6 +357,7 @@ async def get_tag(tag_id: UUID) -> dict:
                 SELECT t.id, t.node_id, t.name, t.display_name, t.data_type, t.tag_type,
                        t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
                        t.read_write, t.enabled, t.description,
+                       t.aggregate_fn, t.formula, t.formula_type, t.sources,
                        n.name AS node_name,
                        latest.ts, latest.value_float, latest.value_int,
                        latest.value_bool, latest.value_str, latest.quality
@@ -767,7 +770,7 @@ async def import_neuron_tags(req: NeuronImportRequest) -> dict:
 # ══════════════════════════════════════
 
 class TagCreateRequest(BaseModel):
-    """创建点位。PHYSICAL 走 Neuron 导入；此端点主要用于 LOGICAL 汇总/派生点位。"""
+    """创建点位。支持自定义 PHYSICAL（手动录入来源）和 LOGICAL（公式/聚合派生）点位。"""
     node_id: str = Field(..., description="挂载的目标节点 UUID")
     name: str = Field(..., min_length=1, description="点位名 (节点内唯一)")
     tag_type: str = Field("LOGICAL", pattern="^(PHYSICAL|LOGICAL)$", description="PHYSICAL/LOGICAL")
@@ -776,11 +779,12 @@ class TagCreateRequest(BaseModel):
     unit: str | None = Field(None, description="单位")
     description: str | None = Field(None, description="描述")
     read_write: str = Field("R", pattern="^[RrWw]+$", description="读写权限")
-    source_path: str | None = Field(None, description="来源路径")
+    source_type: str = Field("manual", description="来源类型：neuron / manual / opcua / modbus 等")
+    source_path: str | None = Field(None, description="来源路径，如 neuron/node/group/tag 或自定义")
     # LogicalTag 汇总规则
     aggregate_fn: str | None = Field(None, description="聚合函数 SUM/AVG/MAX/MIN/COUNT/LAST")
     formula: str | None = Field(None, description="表达式或聚合来源引用")
-    formula_type: str | None = Field("aggregate", description="expression/aggregate/condition")
+    formula_type: str | None = Field("expression", description="expression/aggregate/condition")
     sources: list[str] = Field(default_factory=list, description="来源点位 UUID 列表")
 
 
@@ -813,6 +817,9 @@ async def create_tag(req: TagCreateRequest) -> dict:
                 raise HTTPException(status_code=400, detail=f"aggregate_fn must be one of {sorted(_AGG_FNS)}")
             if not req.sources:
                 raise HTTPException(status_code=400, detail="aggregate LogicalTag requires non-empty 'sources'")
+        elif req.formula_type == "expression":
+            if not req.formula:
+                raise HTTPException(status_code=400, detail="expression LogicalTag requires non-empty 'formula'")
 
     try:
         source_uuids = [UUID(s) for s in req.sources]
@@ -838,14 +845,14 @@ async def create_tag(req: TagCreateRequest) -> dict:
                 cur.execute(
                     """
                     INSERT INTO t_tags (node_id, name, display_name, data_type, tag_type,
-                                        unit, description, read_write, source_path,
+                                        unit, description, read_write, source_type, source_path,
                                         aggregate_fn, formula, formula_type, sources, enabled)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
                     RETURNING id
                     """,
                     (
                         node_uuid, req.name, req.display_name, data_type, req.tag_type,
-                        req.unit, req.description, req.read_write.upper(), req.source_path,
+                        req.unit, req.description, req.read_write.upper(), req.source_type, req.source_path,
                         req.aggregate_fn, req.formula,
                         req.formula_type if req.tag_type == "LOGICAL" else None,
                         source_uuids,

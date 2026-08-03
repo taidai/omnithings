@@ -39,6 +39,10 @@ export interface Tag {
   eng_value: number | null
   latest_ts: string | null
   quality: number | null
+  aggregate_fn: string | null
+  formula: string | null
+  formula_type: string | null
+  sources: string[] | null
 }
 
 export interface HealthStatus {
@@ -191,6 +195,7 @@ export interface TagCreateInput {
   unit?: string
   description?: string
   read_write?: string
+  source_type?: string
   source_path?: string
   aggregate_fn?: string
   formula?: string

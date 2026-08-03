@@ -635,11 +635,53 @@ function TagFormModal({
   const [sourcePath, setSourcePath] = useState(tag?.source_path || '')
   const [saving, setSaving] = useState(false)
 
+  // -- Virtual point (LOGICAL) formula config --
+  const [formulaType, setFormulaType] = useState(tag?.formula_type || 'expression')
+  const [aggregateFn, setAggregateFn] = useState(tag?.aggregate_fn || 'SUM')
+  const [formula, setFormula] = useState(tag?.formula || '')
+  const [sources, setSources] = useState<string[]>(tag?.sources || [])
+  const [availableTags, setAvailableTags] = useState<Tag[]>([])
+  const [sourceNodeFilter, setSourceNodeFilter] = useState(nodeId)
+  const [allNodes, setAllNodes] = useState<Node[]>([])
+
+  useEffect(() => {
+    fetchTags(sourceNodeFilter, 1, 200, undefined, undefined, undefined, undefined, undefined).then((data) => {
+      setAvailableTags(data.tags.filter((t) => t.id !== tag?.id))
+    }).catch(() => {})
+  }, [sourceNodeFilter, tag?.id])
+
+  useEffect(() => {
+    fetchNodes().then(setAllNodes).catch(() => {})
+  }, [])
+
+  const toggleSource = (id: string) => {
+    setSources((prev) => {
+      if (prev.includes(id)) return prev.filter((s) => s !== id)
+      return [...prev, id]
+    })
+  }
+
+  const sourceVar = (idx: number) => `s${idx}`
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) {
       alert('点位名不能为空')
       return
+    }
+    if (tagType === 'LOGICAL') {
+      if (formulaType === 'aggregate' && sources.length === 0) {
+        alert('聚合点位至少需要选择一个来源点位')
+        return
+      }
+      if ((formulaType === 'expression' || formulaType === 'condition') && !formula.trim()) {
+        alert('请填写公式表达式')
+        return
+      }
+      if ((formulaType === 'expression' || formulaType === 'condition') && sources.length === 0) {
+        alert('公式点位至少需要选择一个来源点位')
+        return
+      }
     }
     setSaving(true)
     const form: Partial<TagCreateInput> = {
@@ -652,6 +694,15 @@ function TagFormModal({
       read_write: readWrite,
       source_path: sourcePath.trim() || undefined,
     }
+    if (tagType === 'LOGICAL') {
+      form.formula_type = formulaType
+      form.sources = sources
+      if (formulaType === 'aggregate') {
+        form.aggregate_fn = aggregateFn
+      } else {
+        form.formula = formula.trim()
+      }
+    }
     try {
       await onSave(form)
     } finally {
@@ -661,7 +712,7 @@ function TagFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="neu-card w-[480px] max-w-[90vw] p-5 max-h-[90vh] overflow-y-auto">
+      <div className="neu-card w-[560px] max-w-[90vw] p-5 max-h-[90vh] overflow-y-auto">
         <h3 className="text-sm font-bold text-gray-800 mb-4">{isEdit ? '编辑点位' : '新建点位'}</h3>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -708,8 +759,8 @@ function TagFormModal({
                 onChange={(e) => setTagType(e.target.value)}
                 className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
               >
-                <option value="PHYSICAL">PHYSICAL</option>
-                <option value="LOGICAL">LOGICAL</option>
+                <option value="PHYSICAL">PHYSICAL（物理点位）</option>
+                <option value="LOGICAL">LOGICAL（虚拟点位）</option>
               </select>
             </div>
             <div>
@@ -757,6 +808,121 @@ function TagFormModal({
               placeholder="点位用途说明"
             />
           </div>
+
+          {/* Virtual point formula config */}
+          {tagType === 'LOGICAL' && (
+            <div className="border border-indigo-200 rounded-lg p-3 bg-indigo-50/30 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-indigo-700">虚拟点位配置</span>
+                <span className="text-[10px] text-gray-400">（由后端聚合器/公式引擎每 10s 自动计算）</span>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">计算方式</label>
+                <select
+                  value={formulaType}
+                  onChange={(e) => setFormulaType(e.target.value)}
+                  className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
+                >
+                  <option value="aggregate">聚合（SUM/AVG/MAX/MIN...）</option>
+                  <option value="expression">表达式（s0 * 2 + s1）</option>
+                  <option value="condition">条件判断（s0 &gt; 100 and s1 &lt; 50）</option>
+                </select>
+              </div>
+
+              {formulaType === 'aggregate' && (
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">聚合函数</label>
+                  <select
+                    value={aggregateFn}
+                    onChange={(e) => setAggregateFn(e.target.value)}
+                    className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
+                  >
+                    <option value="SUM">SUM（求和）</option>
+                    <option value="AVG">AVG（平均）</option>
+                    <option value="MAX">MAX（最大值）</option>
+                    <option value="MIN">MIN（最小值）</option>
+                    <option value="COUNT">COUNT（计数）</option>
+                    <option value="LAST">LAST（最新值）</option>
+                  </select>
+                </div>
+              )}
+
+              {(formulaType === 'expression' || formulaType === 'condition') && (
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">
+                    {formulaType === 'condition' ? '条件表达式' : '计算公式'} *
+                  </label>
+                  <input
+                    value={formula}
+                    onChange={(e) => setFormula(e.target.value)}
+                    className="neu-input w-full px-3 py-1.5 text-xs font-mono"
+                    placeholder={formulaType === 'condition' ? 's0 > 100 and s1 < 50' : 's0 * 2 + s1'}
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    用 s0, s1, s2... 引用下方选中的来源点位（按选择顺序编号）
+                  </p>
+                </div>
+              )}
+
+              {/* Source tags picker */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-gray-600">来源点位 *（{sources.length} 个已选）</label>
+                  <select
+                    value={sourceNodeFilter}
+                    onChange={(e) => setSourceNodeFilter(e.target.value)}
+                    className="neu-input px-2 py-1 text-[11px] bg-transparent w-auto"
+                  >
+                    {allNodes.map((n) => (
+                      <option key={n.id} value={n.id}>{n.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="border border-gray-200 rounded max-h-[180px] overflow-y-auto bg-white/50">
+                  {availableTags.length === 0 && (
+                    <div className="px-3 py-4 text-center text-[11px] text-gray-400">该节点下无可用点位</div>
+                  )}
+                  {availableTags.map((t) => {
+                    const selIdx = sources.indexOf(t.id)
+                    const isSelected = selIdx >= 0
+                    return (
+                      <label
+                        key={t.id}
+                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-indigo-50 cursor-pointer border-b border-gray-50 last:border-0"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSource(t.id)}
+                          className="w-3.5 h-3.5 accent-indigo-500"
+                        />
+                        {isSelected && (
+                          <span className="text-[10px] font-mono text-indigo-600 font-bold w-6">{sourceVar(selIdx)}</span>
+                        )}
+                        <span className="text-xs text-gray-700">{t.display_name || t.name}</span>
+                        <span className="text-[10px] text-gray-400">{t.name}</span>
+                        <span className="ml-auto text-[10px] text-gray-400">{t.data_type}</span>
+                        <span className={`text-[10px] px-1 rounded ${t.tag_type === 'PHYSICAL' ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100 text-indigo-600'}`}>{t.tag_type}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                {sources.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {sources.map((sid, idx) => {
+                      const t = availableTags.find((a) => a.id === sid)
+                      return (
+                        <span key={sid} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-mono">
+                          {sourceVar(idx)}={t?.display_name || t?.name || sid.slice(0, 8)}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="neu-btn px-4 py-1.5 text-xs text-gray-600">
