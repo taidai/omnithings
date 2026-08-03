@@ -1,9 +1,18 @@
-﻿import { useEffect, useState } from 'react'
+﻿import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { fetchHealth, type HealthStatus } from './api/client'
-import NodeTreePage from './pages/NodeTreePage'
-import RuleEnginePage from './pages/RuleEnginePage'
-import AlarmCenterPage from './pages/AlarmCenterPage'
 import AdminPanel from './components/AdminPanel'
+
+const NodeTreePage = lazy(() => import('./pages/NodeTreePage'))
+const RuleEnginePage = lazy(() => import('./pages/RuleEnginePage'))
+const AlarmCenterPage = lazy(() => import('./pages/AlarmCenterPage'))
+
+function PageLoader() {
+  return (
+    <div className="neu-card p-8 flex items-center justify-center text-sm text-gray-500">
+      页面加载中...
+    </div>
+  )
+}
 
 function PipelineBar({ health }: { health: HealthStatus | null }) {
   if (!health) return null
