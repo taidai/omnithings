@@ -817,6 +817,9 @@ export interface Alarm {
   ack_at: string | null
   created_at: string
   resolved_at: string | null
+  source_topic?: string | null
+  source_key?: string | null
+  external_id?: string | null
 }
 
 export interface AlarmListResponse {

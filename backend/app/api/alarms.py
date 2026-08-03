@@ -68,6 +68,7 @@ async def list_alarms(
     query = f"""
     SELECT a.id, a.rule_id, a.node_id, a.level, a.message,
            a.acknowledged, a.ack_user, a.ack_at, a.created_at, a.resolved_at,
+           a.source_topic, a.source_key, a.external_id,
            r.name AS rule_name, n.name AS node_name
     FROM t_alarms a
     LEFT JOIN t_rules r ON r.id = a.rule_id

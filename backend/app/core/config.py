@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     # 订阅的 topic 模式 — Neuron 上报 telemetry 使用此前缀
     # 支持逗号分隔的多 topic，例如 "telemetry/#,/neuron/MQTT"
     mqtt_telemetry_topic: str = "/neuron/#"
+    # 分级告警 MQTT topic，payload 中应包含 error1/error2/error3 分组
+    mqtt_alarm_topic: str = "/alarm/#"
     # MQTT 连接保活
     mqtt_keepalive: int = 60
 
@@ -69,6 +71,11 @@ class Settings(BaseSettings):
     def mqtt_telemetry_topics(self) -> list[str]:
         """将逗号分隔的 topic 字符串解析为 topic 列表。"""
         return [t.strip() for t in self.mqtt_telemetry_topic.split(",") if t.strip()]
+
+    @property
+    def mqtt_alarm_topics(self) -> list[str]:
+        """告警 topic 列表。"""
+        return [t.strip() for t in self.mqtt_alarm_topic.split(",") if t.strip()]
     # 断线重连间隔 (秒)
     mqtt_reconnect_delay: float = 5.0
 

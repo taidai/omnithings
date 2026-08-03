@@ -35,6 +35,7 @@ from app.models.schemas import (
 from app.services.mqtt_client import MqttClient
 from app.services.normalizer import TagNormalizationRule, normalize
 from app.services.parser import parse_neuron_json
+from app.services.alarm_processor import process_alarm_message
 from app.services.telemetry_store import batch_insert_snapshots, batch_insert_telemetry, upsert_telemetry_latest, TelemetryRecord
 
 
@@ -172,6 +173,15 @@ class DataPipeline:
         """
         self.metrics.messages_received += 1
         self.metrics.last_message_at = datetime.now(timezone.utc)
+
+        # 路由：告警 topic 直接走告警处理器
+        if self._mqtt is not None and self._mqtt.is_alarm_topic(mqtt_msg.topic):
+            try:
+                result = await asyncio.to_thread(process_alarm_message, mqtt_msg.topic, mqtt_msg.payload)
+                logger.debug("[Pipeline] Alarm message processed: {}", result)
+            except Exception as e:
+                logger.error("[Pipeline] Alarm processing failed: {}", e)
+            return
 
         raw = RawMessage(
             topic=mqtt_msg.topic,

@@ -3,6 +3,12 @@ import { fetchAlarms, acknowledgeAlarm, resolveAlarm, type Alarm, type AlarmLeve
 
 const LEVELS: AlarmLevel[] = ['CRITICAL', 'MAJOR', 'WARNING', 'INFO']
 
+const SOURCE_KEY_STYLES: Record<string, string> = {
+  error1: 'bg-red-100 text-red-700 border-red-200',
+  error2: 'bg-orange-100 text-orange-700 border-orange-200',
+  error3: 'bg-amber-100 text-amber-700 border-amber-200',
+}
+
 const LEVEL_STYLES: Record<AlarmLevel, string> = {
   CRITICAL: 'bg-red-100 text-red-700 border-red-200',
   MAJOR: 'bg-orange-100 text-orange-700 border-orange-200',
@@ -178,6 +184,11 @@ export default function AlarmCenterPage() {
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${LEVEL_STYLES[alarm.level]}`}>
                     {alarm.level}
                   </span>
+                  {alarm.source_key && (
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${SOURCE_KEY_STYLES[alarm.source_key] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                      {alarm.source_key}
+                    </span>
+                  )}
                   <span className="text-xs text-gray-400">{new Date(alarm.created_at).toLocaleString('zh-CN', { hour12: false })}</span>
                   {alarm.rule_name && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#534AB7]/10 text-[#534AB8]">
@@ -187,7 +198,8 @@ export default function AlarmCenterPage() {
                 </div>
                 <h3 className="text-sm font-bold text-gray-800">{alarm.message}</h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  来源: {alarm.node_name || alarm.node_id || '未知节点'}
+                  来源: {alarm.external_id || alarm.node_name || alarm.node_id || 'MQTT告警'}
+                  {alarm.source_topic && <span className="ml-2 text-[10px] text-gray-400 font-mono">{alarm.source_topic}</span>}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">

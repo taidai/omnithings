@@ -117,6 +117,30 @@ class MqttClient:
             client.subscribe([(t, settings.mqtt_qos) for t in topics])
         self._subscribed_topics = list(topics)
 
+    def is_alarm_topic(self, topic: str) -> bool:
+        """判断 topic 是否匹配告警 topic 模式（支持 #/+ 通配符）。"""
+        for pattern in settings.mqtt_alarm_topics:
+            if self._topic_match(topic, pattern):
+                return True
+        return False
+
+    @staticmethod
+    def _topic_match(topic: str, pattern: str) -> bool:
+        """简易 MQTT topic 通配符匹配。"""
+        if pattern == topic:
+            return True
+        if pattern.endswith('/#'):
+            prefix = pattern[:-2]
+            if topic == prefix or topic.startswith(prefix + '/'):
+                return True
+        if '+' in pattern:
+            p_parts = pattern.split('/')
+            t_parts = topic.split('/')
+            if len(p_parts) != len(t_parts):
+                return False
+            return all(p == '+' or p == t for p, t in zip(p_parts, t_parts))
+        return False
+
     def resubscribe(self, topics: list[str]) -> None:
         """运行时重新订阅新的 topic 列表。"""
         with self._lock:
