@@ -808,6 +808,7 @@ async def create_tag(req: TagCreateRequest) -> dict:
     data_type = req.data_type.upper()
     if data_type not in {"FLOAT", "INT", "BOOL", "STRING", "ENUM"}:
         raise HTTPException(status_code=400, detail="Invalid data_type")
+    source_type = "neuron" if req.tag_type == "PHYSICAL" else (req.source_type or "manual")
 
     if req.tag_type == "LOGICAL":
         if req.formula_type not in _FORMULA_TYPES:
@@ -852,7 +853,7 @@ async def create_tag(req: TagCreateRequest) -> dict:
                     """,
                     (
                         node_uuid, req.name, req.display_name, data_type, req.tag_type,
-                        req.unit, req.description, req.read_write.upper(), req.source_type, req.source_path,
+                        req.unit, req.description, req.read_write.upper(), source_type, req.source_path,
                         req.aggregate_fn, req.formula,
                         req.formula_type if req.tag_type == "LOGICAL" else None,
                         source_uuids,

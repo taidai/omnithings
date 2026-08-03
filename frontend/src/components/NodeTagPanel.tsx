@@ -691,9 +691,10 @@ function TagFormModal({
       tag_type: tagType as 'PHYSICAL' | 'LOGICAL',
       unit: unit.trim() || undefined,
       description: description.trim() || undefined,
-      read_write: readWrite,
-      source_path: sourcePath.trim() || undefined,
-    }
+            read_write: readWrite,
+            source_path: tagType === 'PHYSICAL' ? sourcePath.trim() || undefined : undefined,
+            source_type: tagType === 'PHYSICAL' ? 'neuron' : 'manual',
+          }
     if (tagType === 'LOGICAL') {
       form.formula_type = formulaType
       form.sources = sources
@@ -787,15 +788,17 @@ function TagFormModal({
                 placeholder="kW"
               />
             </div>
+            {tagType === 'PHYSICAL' && (
             <div>
-              <label className="block text-xs text-gray-600 mb-1">来源路径</label>
+              <label className="block text-xs text-gray-600 mb-1">Neuron 来源路径</label>
               <input
                 value={sourcePath}
                 onChange={(e) => setSourcePath(e.target.value)}
                 className="neu-input w-full px-3 py-1.5 text-xs"
-                placeholder="neuron/node/group/tag"
+                placeholder="node/group/tag（或完整 neuron/node/group/tag）"
               />
             </div>
+            )}
           </div>
 
           <div>
