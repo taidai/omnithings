@@ -202,9 +202,9 @@ COMMENT ON TABLE t_audit_log IS 'OmniThings 审计日志 - RPC操作/规则变�
 -- ══════════════════════════════════════
 CREATE TABLE IF NOT EXISTS t_alarms (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    rule_id         UUID REFERENCES t_rules(id),
-    node_id         UUID REFERENCES t_nodes(id),
-    tag_id          UUID REFERENCES t_tags(id),
+    rule_id         UUID REFERENCES t_rules(id) ON DELETE CASCADE,
+    node_id         UUID REFERENCES t_nodes(id) ON DELETE CASCADE,
+    tag_id          UUID REFERENCES t_tags(id) ON DELETE CASCADE,
     trigger_tag_name TEXT,
     trigger_value   DOUBLE PRECISION,
     level           TEXT NOT NULL CHECK (level IN ('INFO', 'WARNING', 'MAJOR', 'CRITICAL')),

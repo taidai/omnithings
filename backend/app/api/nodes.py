@@ -422,11 +422,12 @@ async def get_node_tree(node_id: UUID) -> dict:
 
 @router.delete("/nodes/{node_id}")
 async def delete_node(node_id: UUID) -> dict:
-    """删除节点及其所有子孙节点（级联删除挂载的 tags、快照、遥测）。"""
+    """删除节点及其所有子孙节点（级联删除挂载的 tags、快照、遥测、告警）。"""
     from app.services.telemetry_store import get_connection
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # 1) 收集待删除节点及其所有子孙
             cur.execute(
                 """
                 WITH RECURSIVE descendants AS (
@@ -443,11 +444,36 @@ async def delete_node(node_id: UUID) -> dict:
             rows = cur.fetchall()
             if not rows:
                 raise HTTPException(status_code=404, detail="Node not found")
-            ids = [r[0] for r in rows]
-            deleted_count = len(ids)
-            placeholders = ",".join(["%s"] * len(ids))
-            cur.execute(f"DELETE FROM t_nodes WHERE id IN ({placeholders})", ids)
+            node_ids = [r[0] for r in rows]
+
+            # 2) 先删除关联告警：t_alarms 对 t_nodes/t_tags 无外键级联，
+            #    必须先清掉，否则删除节点时会触发外键约束 500 错误。
+            node_placeholders = ",".join(["%s"] * len(node_ids))
+            cur.execute(
+                f"""
+                DELETE FROM t_alarms
+                WHERE node_id IN ({node_placeholders})
+                   OR tag_id IN (
+                       SELECT id FROM t_tags WHERE node_id IN ({node_placeholders})
+                   )
+                """,
+                node_ids + node_ids,
+            )
+            alarms_deleted = cur.rowcount
+
+            # 3) 删除节点：t_tags/t_telemetry/t_telemetry_latest/t_node_snapshot
+            #    均已设置 ON DELETE CASCADE
+            cur.execute(
+                f"DELETE FROM t_nodes WHERE id IN ({node_placeholders})",
+                node_ids,
+            )
+            deleted_count = cur.rowcount
             conn.commit()
 
-    logger.info("[API/nodes] deleted node {} and {} descendants", node_id, deleted_count - 1)
-    return {"deleted": str(node_id), "cascade_nodes": deleted_count}
+    logger.info(
+        "[API/nodes] deleted node {} and {} descendants, {} alarms",
+        node_id,
+        deleted_count - 1,
+        alarms_deleted,
+    )
+    return {"deleted": str(node_id), "cascade_nodes": deleted_count, "alarms_deleted": alarms_deleted}
