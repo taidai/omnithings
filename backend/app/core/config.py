@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     mqtt_username: str | None = None
     mqtt_password: str | None = None
     mqtt_client_id: str = "omnithings-backend"
-    mqtt_qos: int = 1
+    mqtt_qos: int = 0  # QoS 0: at-most-once, broker 不缓存重发，降低内存堆积风险
     # 订阅的 topic 模式 — Neuron 上报 telemetry 使用此前缀
     # 支持逗号分隔的多 topic，例如 "telemetry/#,/neuron/MQTT"
     mqtt_telemetry_topic: str = "/neuron/#"

@@ -1,7 +1,7 @@
 {
   "name": "omnithings-frontend",
   "private": true,
-  "version": "0.4.24",
+  "version": "0.4.25",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -29,3 +29,4 @@
     "vite": "^5.3.4"
   }
 }
+

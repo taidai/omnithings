@@ -59,6 +59,8 @@ class MqttClient:
         with self._lock:
             client_id = f"{settings.mqtt_client_id}-{threading.get_ident()}"
             client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+            # 限制内部消息队列，防止 on_message 处理慢时内存无限增长
+            client.max_queued_messages_set(500)
             client.on_connect = self._on_connect
             client.on_disconnect = self._on_disconnect
             client.on_message = self._on_message_wrapper

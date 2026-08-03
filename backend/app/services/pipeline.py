@@ -75,6 +75,8 @@ class DataPipeline:
         # ---- 节点状态缓存 (全量快照) ----
         # {node_name: {tag_name: (eng_value, raw_value)}}
         self._node_state: dict[str, dict[str, tuple[float | int | bool | str | None, float | int | bool | str | None]]] = {}
+        # 节点上次快照时间，限制快照写入频率
+        self._last_snapshot_ts: dict[str, datetime] = {}
 
     # ══════════════════════════════
     # 生命周期
@@ -179,7 +181,7 @@ class DataPipeline:
 
         # ── Hook 1: 解析 (~30 行) ──
         try:
-            parsed = parse_neuron_json(raw)
+            parsed = await asyncio.to_thread(parse_neuron_json, raw)
         except Exception as e:
             logger.error("[Pipeline] Parser exception on topic={}: {}", raw.topic, e)
             self.metrics.messages_parse_error += 1
@@ -189,8 +191,10 @@ class DataPipeline:
             return  # 跳过无法解析的消息
         self.metrics.messages_parsed_ok += 1
 
-        # ── Hook 2: 归一化 (~40 行) ──
-        normalized = normalize(parsed, rules=self._rules)
+        # ── Hook 2: 归一化 (CPU 密集型，放到线程池避免阻塞事件循环) ──
+        # 复制 rules 引用避免 reload 期间的竞态；dict 引用替换是原子的。
+        rules_snapshot = self._rules
+        normalized = await asyncio.to_thread(normalize, parsed, rules=rules_snapshot)
         self.metrics.points_normalized += normalized.point_count
 
         # 填充 node_id (延迟解析时保留的 node_name 需要映射回 node_id)
@@ -297,6 +301,13 @@ class DataPipeline:
             # 未知节点，跳过快照生成 (避免 DB FK 失败)
             logger.debug("[Pipeline] Skip snapshot for unknown node {}", node_name)
             return None
+
+        # 限制快照频率：同一节点每秒最多生成一次快照，避免高频消息打爆 DB
+        now = datetime.now(timezone.utc)
+        last_ts = self._last_snapshot_ts.get(node_name)
+        if last_ts is not None and (now - last_ts).total_seconds() < 1.0:
+            return None
+        self._last_snapshot_ts[node_name] = now
 
         # 初始化节点状态缓存
         if node_name not in self._node_state:
