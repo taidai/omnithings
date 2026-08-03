@@ -36,8 +36,10 @@ _pool: psycopg2.pool.AbstractConnectionPool | None = None
 
 
 def init_db_pool(min_conn: int = 2, max_conn: int = 10) -> None:
-    """初始化连接池。应在应用启动时调用一次。"""
+    """初始化连接池。应在应用启动时调用一次（幂等）。"""
     global _pool
+    if _pool is not None:
+        return
     # psycopg2 默认不能适配 Python UUID → 必须注册 adapter
     from psycopg2.extras import register_uuid
 

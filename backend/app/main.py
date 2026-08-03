@@ -64,7 +64,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         from app.core.config import settings
         from app.services.config_store import init_config_table, load_mqtt_topics
+        from app.services.telemetry_store import init_db_pool
 
+        # DB pool must be initialized before reading t_system_config
+        init_db_pool(min_conn=settings.db_pool_min, max_conn=settings.db_pool_max)
         init_config_table()
         persisted_topic = load_mqtt_topics()
         if persisted_topic:
