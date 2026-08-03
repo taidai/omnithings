@@ -2,12 +2,13 @@
 
 ## 当前状态
 
-  - 部署版本：**0.4.7**（自动 bump）
+  - 部署版本：**0.4.8**（自动 bump）
   - 服务器：`e606.hlszh.com:13122` 健康检查通过
-  - GitHub：`main` 已推送至 `https://github.com/taidai/omnithings.git`（commit `3de8327`）
+  - GitHub：`main` 已推送至 `https://github.com/taidai/omnithings.git`（commit `cd4fc86`）
   - 关键修复：
     - `backend/app/api/nodes.py` 中 `router = APIRouter()` 与 helper 定义被错放到 endpoint 之后，导致容器启动 `NameError: name 'router' is not defined`。已重写文件，确保定义在前、endpoint 在后。
     - **树节点删除 500 错误**：`t_alarms` 表对 `t_nodes`/`t_tags` 的外键未设置 `ON DELETE CASCADE`，删除带告警的节点时触发外键约束。已在 `delete_node` 中显式先清理关联告警，再删除节点；并新增 migration_008 / 更新 001-schema.sql 补齐级联删除。
+    - **节点树功能增强**：新增点位 CRUD、批量操作（改单位/读写/启用/移动/删除）、高级过滤（点位类型/读写/包含禁用）、质量与最后更新列、节点树搜索、告警角标。
 
 ## 已完成
 
@@ -15,7 +16,11 @@
    - `POST /api/v1/nodes`：创建节点，校验父节点层级。
    - `GET /api/v1/nodes/{id}/tree`：递归子树（含 tag_count）。
    - `PUT /api/v1/nodes/{id}`：更新节点，支持移动父节点、层级校验、成环校验。
-  - `DELETE /api/v1/nodes/{id}`：递归级联删除子孙节点；**新增**：删除前自动清理关联告警，避免外键约束导致 500。
+  - `DELETE /api/v1/nodes/{id}`：递归级联删除子孙节点；删除前自动清理关联告警，避免外键约束导致 500。
+  - `DELETE /api/v1/tags/{id}`：**新增**，删除点位及其历史数据。
+  - `PUT /api/v1/tags/batch`：**新增** unit / read_write / enabled / node_id 批量操作。
+  - `GET /api/v1/tags`：**新增** tag_type / read_write 过滤与质量/时间排序。
+  - `GET /api/v1/alarms/counts`：**新增**，按节点统计未恢复告警数量。
 2. 规则模板后端：
    - `backend/app/api/rule_templates.py` 已注册到 `main.py`。
    - 首次请求自动建表 `t_rule_templates` 并写入 3 条默认模板：光储充调度、心跳测试、自定义。
@@ -29,10 +34,11 @@
 
 ## 验证结果
 
-  - `GET /api/v1/health`：status ok，version 0.4.7
+  - `GET /api/v1/health`：status ok，version 0.4.8
   - `GET /api/v1/rule-templates`：返回 3 条默认模板
   - `GET /api/v1/nodes`：返回现有节点树
   - `DELETE /api/v1/nodes/{id}`：已修复外键约束问题
+  - 节点树页面：点位 CRUD、批量操作、过滤、质量列、告警角标已上线。
 
 ## 下一步建议
 
@@ -57,8 +63,11 @@ python C:\tmp\deploy_omnithings_fixed.py C:\tmp\omnithings-deploy-fixed.zip
 ## 关键文件
 
 - [`backend/app/api/nodes.py`](/C:/Users/chent/Documents/omnithings-explore/backend/app/api/nodes.py)
-- [ackend/app/api/rule_templates.py](/C:/Users/chent/Documents/omnithings-explore/backend/app/api/rule_templates.py)
+- [`backend/app/api/rule_templates.py`](/C:/Users/chent/Documents/omnithings-explore/backend/app/api/rule_templates.py)
+- [`backend/app/api/tags.py`](/C:/Users/chent/Documents/omnithings-explore/backend/app/api/tags.py)
+- [`backend/app/api/alarms.py`](/C:/Users/chent/Documents/omnithings-explore/backend/app/api/alarms.py)
 - [`init-db/migration_008_node_delete_cascade.sql`](/C:/Users/chent/Documents/omnithings-explore/init-db/migration_008_node_delete_cascade.sql)
 - [`frontend/src/pages/NodeTreePage.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/pages/NodeTreePage.tsx)
+- [`frontend/src/components/NodeTagPanel.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/components/NodeTagPanel.tsx)
 - [`frontend/src/pages/RuleEnginePage.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/pages/RuleEnginePage.tsx)
 - [`frontend/src/api/client.ts`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/api/client.ts)
