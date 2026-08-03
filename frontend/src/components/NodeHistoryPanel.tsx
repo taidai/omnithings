@@ -2,21 +2,24 @@
  * NodeHistoryPanel — 历史数据面板
  * 显示选中节点下点位的趋势图，支持多点位对比和时间范围选择。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { fetchTags, fetchTagHistory, type Tag, type HistoryPoint } from '../api/client'
+import { fetchTags, fetchTagHistory, fetchTelemetry, type Tag, type HistoryPoint, type TelemetryPoint } from '../api/client'
 
 interface NodeHistoryPanelProps {
   nodeId: string
 }
 
 type RangeOption = '1h' | '24h' | '7d'
+type ViewMode = 'trend' | 'table'
 
 const RANGE_OPTIONS: { key: RangeOption; label: string }[] = [
   { key: '1h', label: '1小时' },
   { key: '24h', label: '24小时' },
   { key: '7d', label: '7天' },
 ]
+
+const PAGE_SIZE = 50
 
 // Distinct colors for multi-series chart
 const SERIES_COLORS = [
@@ -28,8 +31,13 @@ export default function NodeHistoryPanel({ nodeId }: NodeHistoryPanelProps) {
   const [tags, setTags] = useState<Tag[]>([])
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set())
   const [range, setRange] = useState<RangeOption>('1h')
+  const [viewMode, setViewMode] = useState<ViewMode>('trend')
   const [loading, setLoading] = useState(false)
   const [historyData, setHistoryData] = useState<Map<string, HistoryPoint[]>>(new Map())
+  const [telemetryPoints, setTelemetryPoints] = useState<TelemetryPoint[]>([])
+  const [telemetryTotal, setTelemetryTotal] = useState(0)
+  const [telemetryPage, setTelemetryPage] = useState(1)
+  const [telemetryLoading, setTelemetryLoading] = useState(false)
   const chartRef = useRef<ReactECharts>(null)
 
   const loadTags = useCallback(async () => {
@@ -92,6 +100,34 @@ export default function NodeHistoryPanel({ nodeId }: NodeHistoryPanelProps) {
       setLoading(false)
     })
   }, [selectedTagIds, range])
+
+  // Load raw telemetry records from DB for table view
+  const loadTelemetry = useCallback(async () => {
+    setTelemetryLoading(true)
+    try {
+      const data = await fetchTelemetry(undefined, range, telemetryPage, PAGE_SIZE, nodeId)
+      setTelemetryPoints(data.points || [])
+      setTelemetryTotal(data.total || 0)
+    } catch (err) {
+      console.error('[NodeHistoryPanel] loadTelemetry failed:', err)
+      setTelemetryPoints([])
+      setTelemetryTotal(0)
+    } finally {
+      setTelemetryLoading(false)
+    }
+  }, [nodeId, range, telemetryPage])
+
+  useEffect(() => {
+    if (viewMode === 'table') {
+      loadTelemetry()
+    }
+  }, [viewMode, loadTelemetry])
+
+  useEffect(() => {
+    setTelemetryPage(1)
+  }, [nodeId, range, viewMode])
+
+  const totalTelemetryPages = useMemo(() => Math.ceil(telemetryTotal / PAGE_SIZE) || 1, [telemetryTotal])
 
   const buildChartOption = () => {
     const selectedTags = tags.filter((t) => selectedTagIds.has(t.id))
@@ -168,9 +204,24 @@ export default function NodeHistoryPanel({ nodeId }: NodeHistoryPanelProps) {
             </button>
           ))}
         </div>
-        <span className="text-xs text-gray-500">
-          已选 {selectedTagIds.size}/8 个点位
-        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setViewMode('trend')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+              viewMode === 'trend' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            趋势图
+          </button>
+          <button
+            onClick={() => setViewMode('table')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+              viewMode === 'table' ? 'bg-[#52c41a] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            入库数据
+          </button>
+        </div>
       </div>
 
       {/* Tag selector */}
@@ -201,25 +252,121 @@ export default function NodeHistoryPanel({ nodeId }: NodeHistoryPanelProps) {
         </div>
       </div>
 
-      {/* Chart */}
-      {selectedTagIds.size > 0 ? (
-        <div className="neu-card p-4">
-          {loading ? (
-            <div className="h-[400px] flex items-center justify-center text-gray-400 text-sm">
-              加载中...
-            </div>
-          ) : (
-            <ReactECharts
-              ref={chartRef}
-              option={buildChartOption()}
-              style={{ height: '400px', width: '100%' }}
-              notMerge
-            />
-          )}
+      {/* Tag selector */}
+      {viewMode === 'trend' && (
+        <div className="neu-card p-3">
+          <div className="flex flex-wrap gap-2">
+            {tags.map((tag) => {
+              const isSelected = selectedTagIds.has(tag.id)
+              const tagIdx = tags.filter((t) => selectedTagIds.has(t.id)).indexOf(tag)
+              return (
+                <button
+                  key={tag.id}
+                  onClick={() => toggleTag(tag.id)}
+                  className={`px-2.5 py-1 text-xs rounded-full border transition-all ${
+                    isSelected
+                      ? 'text-white border-transparent'
+                      : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'
+                  }`}
+                  style={isSelected ? { backgroundColor: SERIES_COLORS[tagIdx >= 0 ? tagIdx % SERIES_COLORS.length : 0] } : {}}
+                >
+                  {tag.display_name || tag.name}
+                  {tag.unit ? ` (${tag.unit})` : ''}
+                </button>
+              )
+            })}
+            {tags.length === 0 && (
+              <span className="text-xs text-gray-400 py-2">该节点下无数值型点位</span>
+            )}
+          </div>
         </div>
-      ) : (
-        <div className="neu-card p-8 text-center text-gray-400 text-sm">
-          请选择至少一个点位查看历史趋势
+      )}
+
+      {/* Trend Chart */}
+      {viewMode === 'trend' && (
+        selectedTagIds.size > 0 ? (
+          <div className="neu-card p-4">
+            {loading ? (
+              <div className="h-[400px] flex items-center justify-center text-gray-400 text-sm">
+                加载中...
+              </div>
+            ) : (
+              <ReactECharts
+                ref={chartRef}
+                option={buildChartOption()}
+                style={{ height: '400px', width: '100%' }}
+                notMerge
+              />
+            )}
+          </div>
+        ) : (
+          <div className="neu-card p-8 text-center text-gray-400 text-sm">
+            请选择至少一个点位查看历史趋势
+          </div>
+        )
+      )}
+
+      {/* Raw telemetry table */}
+      {viewMode === 'table' && (
+        <div className="neu-card overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+            <span className="text-xs text-gray-500">
+              共 {telemetryTotal} 条入库记录
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setTelemetryPage((p) => Math.max(1, p - 1))}
+                disabled={telemetryPage <= 1 || telemetryLoading}
+                className="neu-btn w-7 h-7 flex items-center justify-center disabled:opacity-30"
+              >
+                ‹
+              </button>
+              <span className="px-2 font-mono text-xs">
+                {telemetryPage} / {totalTelemetryPages}
+              </span>
+              <button
+                onClick={() => setTelemetryPage((p) => Math.min(totalTelemetryPages, p + 1))}
+                disabled={telemetryPage >= totalTelemetryPages || telemetryLoading}
+                className="neu-btn w-7 h-7 flex items-center justify-center disabled:opacity-30"
+              >
+                ›
+              </button>
+            </div>
+          </div>
+          <div className="table-container overflow-x-auto max-h-[600px] overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-[#f0f0f0] z-10">
+                <tr className="border-b border-gray-200">
+                  <th className="px-3 py-2 text-left font-medium text-gray-500 text-[11px] uppercase tracking-wider">时间</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500 text-[11px] uppercase tracking-wider">点位</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-500 text-[11px] uppercase tracking-wider">原始值</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-500 text-[11px] uppercase tracking-wider">工程值</th>
+                  <th className="px-3 py-2 text-center font-medium text-gray-500 text-[11px] uppercase tracking-wider">质量</th>
+                </tr>
+              </thead>
+              <tbody>
+                {telemetryLoading ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-8 text-center text-gray-400">加载中...</td>
+                  </tr>
+                ) : telemetryPoints.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-8 text-center text-gray-400">该时间范围内无入库记录</td>
+                  </tr>
+                ) : (
+                  telemetryPoints.map((p, idx) => (
+                    <tr key={idx} className="border-b border-gray-100 hover:bg-white/30">
+                      <td className="px-3 py-2 text-[11px] text-gray-600 font-mono">{new Date(p.ts).toLocaleString('zh-CN')}</td>
+                      <td className="px-3 py-2 text-gray-700">{p.tag_name}</td>
+                      <td className="px-3 py-2 text-right font-mono-value text-gray-700">{p.raw_value !== null ? p.raw_value.toFixed(4) : '—'}</td>
+                      <td className="px-3 py-2 text-right font-mono-value text-[#389e0d]">{p.eng_value !== null ? p.eng_value.toFixed(4) : '—'}</td>
+                      <td className="px-3 py-2 text-center text-[11px] text-gray-500">{p.quality ?? '—'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

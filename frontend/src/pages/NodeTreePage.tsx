@@ -673,6 +673,8 @@ export default function NodeTreePage() {
             <div className="flex items-center gap-2 mb-3">
               {[
                 { key: 'overview', label: '节点概览' },
+                { key: 'realtime', label: '实时数据' },
+                { key: 'history', label: '历史数据' },
                 { key: 'tags', label: '点位管理' },
                 { key: 'snapshots', label: '节点快照' },
               ].map((t) => (
