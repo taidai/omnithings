@@ -93,35 +93,34 @@ def _coerce_latest_value(tag: dict) -> None:
     将 t_telemetry_latest 的 value_* 列转换为 API 层的 raw_value / eng_value。
 
     数据库层已存储工程值（归一化后），因此 raw_value = eng_value（数值类型）。
+    由于 Neuron 上报值可能为浮点但 t_tags 配置为 INT，这里做跨列回退。
     BOOL/STRING 类型只返回 raw_value，eng_value 为 None。
     """
     data_type = tag.get("data_type")
-    if data_type == "BOOL":
-        raw = tag.pop("value_bool", None)
-        tag["raw_value"] = raw
-        tag["eng_value"] = None
-    elif data_type == "STRING":
-        raw = tag.pop("value_str", None)
-        tag["raw_value"] = raw
-        tag["eng_value"] = None
-    elif data_type == "INT":
-        raw = tag.pop("value_int", None)
-        tag["raw_value"] = raw
-        try:
-            tag["eng_value"] = round(float(raw), 4) if raw is not None else None
-        except (TypeError, ValueError):
-            tag["eng_value"] = None
-    else:  # FLOAT / 默认
-        raw = tag.pop("value_float", None)
-        tag["raw_value"] = raw
-        try:
-            tag["eng_value"] = round(float(raw), 4) if raw is not None else None
-        except (TypeError, ValueError):
-            tag["eng_value"] = None
+    value_float = tag.pop("value_float", None)
+    value_int = tag.pop("value_int", None)
+    value_bool = tag.pop("value_bool", None)
+    value_str = tag.pop("value_str", None)
 
-    # 清理其他 value_* 列，避免污染响应
-    for k in ("value_float", "value_int", "value_bool", "value_str"):
-        tag.pop(k, None)
+    if data_type == "BOOL":
+        raw = value_bool
+    elif data_type == "STRING":
+        raw = value_str
+    elif data_type == "INT":
+        # INT 配置优先取 value_int，缺失时回退 value_float
+        raw = value_int if value_int is not None else value_float
+    else:  # FLOAT / 默认
+        # FLOAT 配置优先取 value_float，缺失时回退 value_int
+        raw = value_float if value_float is not None else value_int
+
+    tag["raw_value"] = raw
+    if data_type in ("BOOL", "STRING"):
+        tag["eng_value"] = None
+    else:
+        try:
+            tag["eng_value"] = round(float(raw), 4) if raw is not None else None
+        except (TypeError, ValueError):
+            tag["eng_value"] = None
 
 # ══════════════════════════════════════
 # Endpoints

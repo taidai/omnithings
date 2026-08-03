@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -93,8 +94,10 @@ class ParsedMessage(BaseModel):
     """
 
     node_name: str  # Neuron 节点名 (对应 t_nodes.name 或 source_path)
+    group: str | None = None  # Neuron 采集组名 (MQTT payload 中常见)
     timestamp_ms: int  # Neuron 上报时间戳 (毫秒 epoch)
-    tags: dict[str, int | float | bool | str | None]  # 原始键值对
+    # 原始键值对；允许 list/dict，由 normalizer 决定是否跳过
+    tags: dict[str, Any]
 
     @property
     def timestamp(self) -> datetime:
@@ -120,6 +123,7 @@ class NormalizedPoint(BaseModel):
     """
 
     node_name: str  # 来源节点名 (解析时保留, 后续匹配 node_id)
+    group: str | None = None  # 来源采集组名 (Neuron MQTT payload)
     tag_name: str  # 归一化后的字段名 (可能被 rename, 如 activePower→activePower_kW)
     value: float | int | bool | str  # 工程值
     data_type: DataType

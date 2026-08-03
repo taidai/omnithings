@@ -80,7 +80,7 @@ class MqttClient:
         if not connected:
             raise RuntimeError(f"MQTT connect timeout to {host}:{port}")
 
-        logger.info("[MQTT] Connected and subscribed to {}", settings.mqtt_telemetry_topic)
+        logger.info("[MQTT] Connected and subscribed to {}", settings.mqtt_telemetry_topics)
         _global_client = self
 
     async def stop(self) -> None:
@@ -111,11 +111,16 @@ class MqttClient:
     # ══════════════════════════════
 
     def _on_connect(self, client: mqtt.Client, userdata, flags, reason_code, properties):
-        """连接成功回调 — 订阅 topic。"""
+        """连接成功回调 — 订阅所有配置的 topic。"""
         if reason_code == 0:
-            client.subscribe(settings.mqtt_telemetry_topic, qos=settings.mqtt_qos)
+            topics = settings.mqtt_telemetry_topics
+            if len(topics) == 1:
+                client.subscribe(topics[0], qos=settings.mqtt_qos)
+            else:
+                # paho-mqtt v2 支持 [(topic, qos), ...] 批量订阅
+                client.subscribe([(t, settings.mqtt_qos) for t in topics])
             self._connected.set()
-            logger.success("[MQTT] Connected ✅")
+            logger.success("[MQTT] Connected ✅, subscribed to {} topic(s)", len(topics))
         else:
             logger.error("[MQTT] Connect failed: rc={}", reason_code)
 

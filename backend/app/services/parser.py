@@ -17,6 +17,7 @@ from app.models.schemas import ParsedMessage, RawMessage
 # 允许的 Neuron timestamp 字段名候选
 _TS_KEYS = ("timestamp", "ts", "time", "t")
 _NODE_KEYS = ("node_name", "nodeName", "node", "device", "name")
+_GROUP_KEYS = ("group", "groupName", "grp")
 _TAG_KEYS = ("tags", "values", "metrics", "data", "payload")
 
 
@@ -52,6 +53,9 @@ def parse_neuron_json(raw: RawMessage) -> ParsedMessage | None:
         # e.g. "telemetry/HuaweiInverter_01" → "HuaweiInverter_01"
         node_name = raw.topic.split("/")[-1] if "/" in raw.topic else raw.topic
 
+    # ---- 提取 group ----
+    group = _extract_field(body, _GROUP_KEYS)
+
     # ---- 提取 timestamp ----
     ts_ms = _extract_timestamp(body)
 
@@ -63,6 +67,7 @@ def parse_neuron_json(raw: RawMessage) -> ParsedMessage | None:
 
     return ParsedMessage(
         node_name=node_name,
+        group=group,
         timestamp_ms=ts_ms,
         tags=tags,
     )

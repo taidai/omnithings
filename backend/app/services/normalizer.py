@@ -84,6 +84,11 @@ def normalize(
     rule_map = rules or {}
 
     for raw_name, raw_value in parsed.tags.items():
+        # 跳过非原子类型 (list/dict) — 通常是 Neuron 寄存器读取失败的垃圾数据
+        if isinstance(raw_value, (list, dict)):
+            logger.debug("[Normalize] Skip non-scalar tag {}={}", raw_name, raw_value)
+            continue
+
         rule = rule_map.get(raw_name)
 
         if rule is not None:
@@ -93,6 +98,7 @@ def normalize(
             point = _auto_normalize(raw_name, raw_value, parsed.timestamp)
 
         if point is not None:
+            point.group = parsed.group
             points.append(point)
 
     return NormalizedMessage(

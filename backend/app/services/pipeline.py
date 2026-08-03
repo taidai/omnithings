@@ -55,6 +55,8 @@ class DataPipeline:
         self._rules: dict[str, TagNormalizationRule] = {}  # {tag_name: rule}
         self._node_id_map: dict[str, UUID] = {}            # {node_name: node_id}
         self._tag_id_map: dict[str, UUID] = {}             # {tag_name: tag_id}
+        # Neuron 点位按 source_path 精确映射: {(neuron_node, group, tag_name): (node_id, tag_id, rule)}
+        self._neuron_tag_map: dict[tuple[str, str, str], tuple[UUID, UUID, TagNormalizationRule]] = {}
 
         # ---- Metrics ----
         self.metrics = PipelineMetrics()
@@ -155,7 +157,12 @@ class DataPipeline:
         )
 
         # ── Hook 1: 解析 (~30 行) ──
-        parsed = parse_neuron_json(raw)
+        try:
+            parsed = parse_neuron_json(raw)
+        except Exception as e:
+            logger.error("[Pipeline] Parser exception on topic={}: {}", raw.topic, e)
+            self.metrics.messages_parse_error += 1
+            return
         if parsed is None:
             self.metrics.messages_parse_error += 1
             return  # 跳过无法解析的消息
@@ -175,7 +182,8 @@ class DataPipeline:
         should_flush = False
         async with self._buffer_lock:
             self._buffer.extend(records)
-            self._snapshot_buffer.append(snapshot)
+            if snapshot is not None:
+                self._snapshot_buffer.append(snapshot)
             should_flush = len(self._buffer) >= settings.pipeline_batch_size
 
         if should_flush:
@@ -226,19 +234,33 @@ class DataPipeline:
         """NormalizedMessage → TelemetryRecord[] (需要 ID 映射)."""
         records: list[TelemetryRecord] = []
         for point in msg.points:
-            nid = self._node_id_map.get(point.node_name or msg.source_node)
-            tid = self._tag_id_map.get(point.tag_name)
+            nid: UUID | None = None
+            tid: UUID | None = None
+
+            # 优先按 Neuron source_path 精确匹配 (neuron_node/group/tag_name)
+            if point.group:
+                key = (point.node_name or msg.source_node, point.group, point.tag_name)
+                mapped = self._neuron_tag_map.get(key)
+                if mapped:
+                    nid, tid, _rule = mapped
+
+            # 回退：按 node_name + tag_name 全局匹配 (兼容 telemetry/# 格式)
+            if nid is None or tid is None:
+                nid = self._node_id_map.get(point.node_name or msg.source_node)
+                tid = self._tag_id_map.get(point.tag_name)
+
             if nid is not None and tid is not None:
                 records.append(TelemetryRecord.from_point(point, nid, tid))
             else:
                 logger.debug(
-                    "[Pipeline] Unresolved: node={} tag={}",
+                    "[Pipeline] Unresolved: node={} group={} tag={}",
                     point.node_name or msg.source_node,
+                    point.group,
                     point.tag_name,
                 )
         return records
 
-    def _to_snapshot(self, msg: NormalizedMessage, parsed: ParsedMessage) -> NodeSnapshotRecord:
+    def _to_snapshot(self, msg: NormalizedMessage, parsed: ParsedMessage) -> NodeSnapshotRecord | None:
         """
         NormalizedMessage → NodeSnapshotRecord (数据黑板)。
 
@@ -250,8 +272,9 @@ class DataPipeline:
         node_name = msg.source_node
         node_id = self._node_id_map.get(node_name)
         if node_id is None:
-            # 未知节点，使用零 UUID (会在 DB 层被拒绝，仅作占位)
-            node_id = UUID(int=0)
+            # 未知节点，跳过快照生成 (避免 DB FK 失败)
+            logger.debug("[Pipeline] Skip snapshot for unknown node {}", node_name)
+            return None
 
         # 初始化节点状态缓存
         if node_name not in self._node_state:
@@ -300,7 +323,9 @@ class DataPipeline:
                                t.unit_from,
                                t.unit_to,
                                t.range_min,
-                               t.range_max
+                               t.range_max,
+                               t.source_type,
+                               t.source_path
                         FROM t_tags t
                         JOIN t_nodes n ON t.node_id = n.id
                         WHERE t.enabled = true AND n.enabled = true;
@@ -310,13 +335,14 @@ class DataPipeline:
             self._rules.clear()
             self._node_id_map.clear()
             self._tag_id_map.clear()
+            self._neuron_tag_map.clear()
 
             for row in rows:
                 (tag_name, node_name, tag_id, node_id, data_type,
-                 scale_factor, offset, unit_from, unit_to, range_min, range_max) = row
+                 scale_factor, offset, unit_from, unit_to, range_min, range_max,
+                 source_type, source_path) = row
 
-                # 归一化规则
-                self._rules[tag_name] = TagNormalizationRule(
+                rule = TagNormalizationRule(
                     tag_name=tag_name,
                     data_type=data_type,
                     scale_factor=scale_factor or 1.0,
@@ -326,11 +352,26 @@ class DataPipeline:
                     range_min=range_min,
                     range_max=range_max,
                 )
+                # 归一化规则
+                self._rules[tag_name] = rule
                 # ID 映射
                 self._node_id_map[node_name] = node_id
                 self._tag_id_map[tag_name] = tag_id
 
-            logger.info("[Pipeline] Loaded {} tag rules", len(self._rules))
+                # Neuron 点位：按 source_path 精确路由
+                if source_type == "neuron" and source_path:
+                    parts = source_path.split("/")
+                    if len(parts) >= 3:
+                        neuron_node, neuron_group = parts[0], parts[1]
+                        neuron_tag_name = "/".join(parts[2:])
+                        self._neuron_tag_map[(neuron_node, neuron_group, neuron_tag_name)] = (
+                            node_id, tag_id, rule
+                        )
+
+            logger.info(
+                "[Pipeline] Loaded {} tag rules, {} neuron source-path mappings",
+                len(self._rules), len(self._neuron_tag_map)
+            )
 
         except Exception as e:
             logger.warning("[Pipeline] Failed to load tag rules (DB may not be ready): {}", e)
