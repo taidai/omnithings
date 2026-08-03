@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { fetchHealth, type HealthStatus } from './api/client'
 import NodeTreePage from './pages/NodeTreePage'
 import RuleEnginePage from './pages/RuleEnginePage'
@@ -45,6 +45,7 @@ const NAV_ITEMS: { key: PageKey; label: string; icon: string }[] = [
 export default function App() {
   const [activePage, setActivePage] = useState<PageKey>('tree')
   const [health, setHealth] = useState<HealthStatus | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     const poll = () => fetchHealth().then(setHealth).catch(() => {})
@@ -56,30 +57,48 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#e8e8e8] flex">
       {/* 侧边栏 */}
-      <aside className="w-56 neu-card m-4 mr-0 p-3 flex flex-col">
-        <div className="mb-6 px-2 pt-1">
-          <h1 className="text-lg font-bold text-gray-800">OmniThings</h1>
-          <p className="text-[10px] text-gray-400">工业 IoT 平台</p>
+      <aside
+        className={`neu-card m-4 mr-0 p-3 flex flex-col transition-all duration-300 ${
+          collapsed ? 'w-16 items-center' : 'w-56'
+        }`}
+      >
+        <div className={`flex items-center ${collapsed ? 'mb-4 justify-center' : 'mb-6 px-2 pt-1 justify-between'}`}>
+          {!collapsed && (
+            <div>
+              <h1 className="text-lg font-bold text-gray-800">OmniThings</h1>
+              <p className="text-[10px] text-gray-400">工业 IoT 平台</p>
+            </div>
+          )}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            title={collapsed ? '展开' : '收起'}
+            className="neu-btn w-7 h-7 flex items-center justify-center text-xs text-gray-500 hover:text-gray-700"
+          >
+            {collapsed ? '▶' : '◀'}
+          </button>
         </div>
-        <nav className="space-y-2">
+        <nav className={`space-y-2 w-full ${collapsed ? 'flex flex-col items-center' : ''}`}>
           {NAV_ITEMS.map((item) => (
             <button
               key={item.key}
               onClick={() => setActivePage(item.key)}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+              title={collapsed ? item.label : undefined}
+              className={`flex items-center rounded-lg text-xs font-medium transition-colors ${
+                collapsed ? 'w-10 h-10 justify-center px-0' : 'w-full gap-3 px-3 py-2'
+              } ${
                 activePage === item.key
                   ? 'bg-[#52c41a] text-white shadow'
                   : 'text-gray-600 hover:bg-white/40'
               }`}
             >
               <span className="text-sm">{item.icon}</span>
-              {item.label}
+              {!collapsed && item.label}
             </button>
           ))}
         </nav>
-        <div className="mt-auto px-2 pb-1 text-[10px] text-gray-400">
-          <div>融合：节点快照 + 点位管理</div>
-          <div className="mt-1 font-mono-value">FE {__APP_VERSION__}</div>
+        <div className={`mt-auto text-[10px] text-gray-400 ${collapsed ? 'text-center' : 'px-2 pb-1'}`}>
+          {!collapsed && <div>融合：节点快照 + 点位管理</div>}
+          <div className={collapsed ? '' : 'mt-1'}>FE {__APP_VERSION__}</div>
         </div>
       </aside>
 
