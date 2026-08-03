@@ -115,6 +115,12 @@ class DataPipeline:
             len(self._tag_id_map),
         )
 
+    async def reload_mqtt_topics(self) -> None:
+        """运行时根据 settings 重新订阅 MQTT topic。"""
+        if self._mqtt is not None:
+            self._mqtt.resubscribe(settings.mqtt_telemetry_topics)
+            logger.info("[Pipeline] MQTT topics reloaded: {}", settings.mqtt_telemetry_topics)
+
     async def stop(self) -> None:
         """优雅停止。"""
         logger.info("[Pipeline] Stopping F0 data pipeline ...")

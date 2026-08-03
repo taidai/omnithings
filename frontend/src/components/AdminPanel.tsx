@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
   fetchPipelineConfig, updatePipelineConfig, executeSql, truncateTable,
-  type PipelineConfig, type SqlQueryResult,
+  fetchMqttConfig, updateMqttConfig,
+  type PipelineConfig, type SqlQueryResult, type MqttConfig,
 } from '../api/client'
 import DataBrowser from './DataBrowser'
 
@@ -10,6 +11,11 @@ export default function AdminPanel() {
   const [config, setConfig] = useState<PipelineConfig>({ batch_size: 50, flush_interval_sec: 1.0 })
   const [configSaving, setConfigSaving] = useState(false)
   const [configMsg, setConfigMsg] = useState('')
+
+  // MQTT 主题
+  const [mqttConfig, setMqttConfig] = useState<MqttConfig>({ mqtt_telemetry_topic: '/neuron/#', persisted: null, effective_topics: [] })
+  const [mqttSaving, setMqttSaving] = useState(false)
+  const [mqttMsg, setMqttMsg] = useState('')
 
   // SQL 查询
   const [sql, setSql] = useState('SELECT * FROM t_telemetry ORDER BY ts DESC LIMIT 100')
@@ -25,6 +31,7 @@ export default function AdminPanel() {
 
   useEffect(() => {
     fetchPipelineConfig().then(setConfig).catch(() => {})
+    fetchMqttConfig().then(setMqttConfig).catch(() => {})
   }, [])
 
   const handleSaveConfig = async () => {
@@ -37,6 +44,20 @@ export default function AdminPanel() {
       setConfigMsg('保存失败')
     } finally {
       setConfigSaving(false)
+    }
+  }
+
+  const handleSaveMqtt = async () => {
+    setMqttSaving(true)
+    setMqttMsg('')
+    try {
+      const result = await updateMqttConfig({ mqtt_telemetry_topic: mqttConfig.mqtt_telemetry_topic })
+      setMqttConfig(result)
+      setMqttMsg('MQTT 主题已保存并实时重订阅')
+    } catch {
+      setMqttMsg('保存失败')
+    } finally {
+      setMqttSaving(false)
     }
   }
 

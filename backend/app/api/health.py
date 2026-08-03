@@ -42,6 +42,11 @@ def set_pipeline(pipeline) -> None:
     _pipeline = pipeline
 
 
+def get_pipeline():
+    """获取当前 pipeline 实例（供其他 API 模块使用）。"""
+    return _pipeline
+
+
 @router.get("/health")
 async def health_check() -> dict:
     """

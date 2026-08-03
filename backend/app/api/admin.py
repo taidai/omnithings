@@ -3,6 +3,8 @@ OmniThings Admin / Developer API — 开发者工具
 
 GET    /api/v1/pipeline/config      → 获取管道配置
 PUT    /api/v1/pipeline/config      → 更新入库节拍 (batch_size / flush_interval)
+GET    /api/v1/mqtt-config          → 获取 MQTT 北向主题配置
+PUT    /api/v1/mqtt-config          → 更新 MQTT 北向主题配置（实时重订阅）
 POST   /api/v1/query                → 执行 SELECT SQL 查询
 POST   /api/v1/admin/truncate       → 清空指定表 (白名单 + 确认)
 """
@@ -53,7 +55,67 @@ async def update_pipeline_config(req: PipelineConfig) -> dict:
 
 
 # ══════════════════════════════════════
-# 2. SQL 语句查表
+# 2. MQTT 北向主题配置
+# ══════════════════════════════════════
+
+class MqttConfigRequest(BaseModel):
+    mqtt_telemetry_topic: str = Field(..., description="MQTT 遥测主题，支持逗号分隔与 +/# 通配符")
+
+
+@router.get("/mqtt-config")
+async def get_mqtt_config() -> dict:
+    """获取当前 MQTT 遥测主题配置（.env 与 DB 合并后的实际生效值）。"""
+    from app.core.config import settings
+    from app.services.config_store import load_mqtt_topics
+
+    persisted = load_mqtt_topics()
+    return {
+        "mqtt_telemetry_topic": settings.mqtt_telemetry_topic,
+        "persisted": persisted,
+        "effective_topics": settings.mqtt_telemetry_topics,
+    }
+
+
+@router.put("/mqtt-config")
+async def update_mqtt_config(req: MqttConfigRequest) -> dict:
+    """更新 MQTT 遥测主题并实时重订阅。"""
+    from app.core.config import settings
+    from app.services.config_store import save_mqtt_topics
+
+    topic_string = req.mqtt_telemetry_topic.strip()
+    if not topic_string:
+        raise HTTPException(status_code=400, detail="MQTT topic cannot be empty")
+
+    # Validate topic format (basic)
+    for t in [x.strip() for x in topic_string.split(",") if x.strip()]:
+        if " " in t:
+            raise HTTPException(status_code=400, detail=f"Invalid topic: {t}")
+
+    # Persist to DB
+    save_mqtt_topics(topic_string)
+
+    # Update runtime settings
+    settings.mqtt_telemetry_topic = topic_string
+
+    # Resubscribe via pipeline
+    from app.api.health import get_pipeline
+    pipeline = get_pipeline()
+    if pipeline is not None:
+        await pipeline.reload_mqtt_topics()
+    else:
+        logger.warning("[API/mqtt-config] Pipeline not available, settings saved but not resubscribed")
+
+    logger.info("[API/mqtt-config] Updated MQTT telemetry topic to: {}", topic_string)
+
+    return {
+        "status": "ok",
+        "mqtt_telemetry_topic": settings.mqtt_telemetry_topic,
+        "effective_topics": settings.mqtt_telemetry_topics,
+    }
+
+
+# ══════════════════════════════════════
+# 3. SQL 语句查表
 # ══════════════════════════════════════
 
 class SqlQueryRequest(BaseModel):

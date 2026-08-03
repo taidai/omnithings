@@ -60,6 +60,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # ---- Startup ----
     logger.info("OmniThings IoT Platform starting up...")
 
+    # Load runtime config from DB (overrides .env defaults)
+    try:
+        from app.core.config import settings
+        from app.services.config_store import init_config_table, load_mqtt_topics
+
+        init_config_table()
+        persisted_topic = load_mqtt_topics()
+        if persisted_topic:
+            settings.mqtt_telemetry_topic = persisted_topic
+            logger.info("[Main] Loaded MQTT telemetry topic from DB: {}", persisted_topic)
+    except Exception as e:
+        logger.warning("[Main] Failed to load runtime config from DB (non-fatal): {}", e)
+
     # Phase 1 S2+: 启动 F0 数据管道 (MQTT → Parse → Normalize → Store)
     try:
         from app.services.pipeline import DataPipeline

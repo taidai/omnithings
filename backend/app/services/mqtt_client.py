@@ -44,6 +44,7 @@ class MqttClient:
         self._connected = threading.Event()
         self._lock = threading.Lock()
         self._stopped = False
+        self._subscribed_topics: list[str] = []
 
     @property
     def is_connected(self) -> bool:
@@ -106,6 +107,27 @@ class MqttClient:
             info = self._client.publish(topic, payload, qos=qos)
             info.wait_for_publish(timeout=timeout)
 
+    def _do_subscribe(self, client: mqtt.Client, topics: list[str]) -> None:
+        """执行实际订阅并记录当前订阅列表。"""
+        if len(topics) == 1:
+            client.subscribe(topics[0], qos=settings.mqtt_qos)
+        else:
+            client.subscribe([(t, settings.mqtt_qos) for t in topics])
+        self._subscribed_topics = list(topics)
+
+    def resubscribe(self, topics: list[str]) -> None:
+        """运行时重新订阅新的 topic 列表。"""
+        with self._lock:
+            if self._client is None or not self._connected.is_set():
+                logger.warning("[MQTT] Not connected, skip resubscribe")
+                return
+            # 取消旧订阅
+            if self._subscribed_topics:
+                self._client.unsubscribe(self._subscribed_topics)
+            # 订阅新列表
+            self._do_subscribe(self._client, topics)
+            logger.success("[MQTT] Resubscribed to {} topic(s): {}", len(topics), topics)
+
     # ══════════════════════════════
     # paho-mqtt 回调
     # ══════════════════════════════
@@ -114,11 +136,7 @@ class MqttClient:
         """连接成功回调 — 订阅所有配置的 topic。"""
         if reason_code == 0:
             topics = settings.mqtt_telemetry_topics
-            if len(topics) == 1:
-                client.subscribe(topics[0], qos=settings.mqtt_qos)
-            else:
-                # paho-mqtt v2 支持 [(topic, qos), ...] 批量订阅
-                client.subscribe([(t, settings.mqtt_qos) for t in topics])
+            self._do_subscribe(client, topics)
             self._connected.set()
             logger.success("[MQTT] Connected ✅, subscribed to {} topic(s)", len(topics))
         else:

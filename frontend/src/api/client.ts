@@ -502,6 +502,27 @@ export async function updatePipelineConfig(config: PipelineConfig): Promise<any>
   return res.json()
 }
 
+export interface MqttConfig {
+  mqtt_telemetry_topic: string
+  persisted: string | null
+  effective_topics: string[]
+}
+
+export async function fetchMqttConfig(): Promise<MqttConfig> {
+  const res = await fetch(`${API_BASE}/mqtt-config`)
+  return res.json()
+}
+
+export async function updateMqttConfig(config: { mqtt_telemetry_topic: string }): Promise<MqttConfig> {
+  const res = await fetch(`${API_BASE}/mqtt-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  if (!res.ok) throw new Error(`Update failed: ${res.status}`)
+  return res.json()
+}
+
 export interface SqlQueryResult {
   columns: string[]
   rows: any[][]
