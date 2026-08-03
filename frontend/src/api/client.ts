@@ -190,6 +190,8 @@ export interface TagCreateInput {
   display_name?: string
   unit?: string
   description?: string
+  read_write?: string
+  source_path?: string
   aggregate_fn?: string
   formula?: string
   formula_type?: string
@@ -332,6 +334,9 @@ export async function fetchTags(
   pageSize = 50,
   search?: string,
   dataType?: string,
+  tagType?: string,
+  readWrite?: string,
+  enabled?: boolean,
   sortBy?: string,
   sortOrder?: 'asc' | 'desc',
 ): Promise<{ tags: Tag[]; total: number; page: number; page_size: number; total_pages: number }> {
@@ -339,19 +344,41 @@ export async function fetchTags(
   if (nodeId) params.set('node_id', nodeId)
   if (search) params.set('search', search)
   if (dataType) params.set('data_type', dataType)
+  if (tagType) params.set('tag_type', tagType)
+  if (readWrite) params.set('read_write', readWrite)
+  if (enabled !== undefined) params.set('enabled', String(enabled))
   if (sortBy) params.set('sort_by', sortBy)
   if (sortOrder) params.set('sort_order', sortOrder)
   const res = await fetch(`${API_BASE}/tags?${params}`)
   return res.json()
 }
 
-export async function batchUpdateTags(tagIds: string[], updates: { scale_factor?: number; value_offset?: number }): Promise<any> {
+export async function batchUpdateTags(
+  tagIds: string[],
+  updates: {
+    scale_factor?: number
+    value_offset?: number
+    unit?: string
+    read_write?: string
+    enabled?: boolean
+    node_id?: string
+  },
+): Promise<any> {
   const res = await fetch(`${API_BASE}/tags/batch`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tag_ids: tagIds, ...updates }),
   })
   if (!res.ok) throw new Error(`Batch update failed: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteTag(tagId: string): Promise<{ status: string; deleted: string }> {
+  const res = await fetch(`${API_BASE}/tags/${tagId}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `Delete tag failed: ${res.status}`)
+  }
   return res.json()
 }
 
@@ -790,6 +817,15 @@ export async function fetchAlarms(
   const res = await fetch(`${API_BASE}/alarms?${params}`)
   if (!res.ok) throw new Error(`Fetch alarms failed: ${res.status}`)
   return res.json()
+}
+
+export async function fetchAlarmCounts(nodeIds?: string[]): Promise<Record<string, number>> {
+  const params = new URLSearchParams()
+  if (nodeIds && nodeIds.length > 0) params.set('node_ids', nodeIds.join(','))
+  const res = await fetch(`${API_BASE}/alarms/counts?${params}`)
+  if (!res.ok) throw new Error(`Fetch alarm counts failed: ${res.status}`)
+  const data = await res.json()
+  return data.counts || {}
 }
 
 export async function acknowledgeAlarm(alarmId: string, ackUser = 'operator'): Promise<void> {

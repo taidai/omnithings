@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  fetchNodes, fetchRules, updateNode, createNode, deleteNode,
+  fetchNodes, fetchRules, updateNode, createNode, deleteNode, fetchAlarmCounts,
   fetchCategories, fetchNeuronNodes, fetchNeuronGroups, importNeuronTags,
   type Node, type Rule, type Category, type NeuronNode, type NeuronGroup,
 } from '../api/client'
@@ -38,6 +38,7 @@ function NodeIcon({ layer }: { layer: number }) {
 interface TreeNodeProps {
   node: Node
   nodes: Node[]
+  alarmCounts: Record<string, number>
   depth: number
   selectedId: string
   expanded: Set<string>
@@ -45,7 +46,7 @@ interface TreeNodeProps {
   onSelect: (id: string) => void
 }
 
-function TreeNode({ node, nodes, depth, selectedId, expanded, onToggle, onSelect }: TreeNodeProps) {
+function TreeNode({ node, nodes, alarmCounts, depth, selectedId, expanded, onToggle, onSelect }: TreeNodeProps) {
   const children = useMemo(
     () => nodes.filter((n) => n.parent_id === node.id).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
     [nodes, node.id]
@@ -53,6 +54,7 @@ function TreeNode({ node, nodes, depth, selectedId, expanded, onToggle, onSelect
   const isExpanded = expanded.has(node.id)
   const isSelected = selectedId === node.id
   const hasChildren = children.length > 0
+  const alarmCount = alarmCounts[node.id] || 0
 
   return (
     <div>
@@ -71,6 +73,11 @@ function TreeNode({ node, nodes, depth, selectedId, expanded, onToggle, onSelect
         </span>
         <NodeIcon layer={node.layer} />
         <span className="text-xs truncate" title={node.name}>{node.name}</span>
+        {alarmCount > 0 && (
+          <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-500 text-white">
+            {alarmCount}
+          </span>
+        )}
         <span className="ml-auto text-[10px] text-gray-400">{node.tag_count > 0 ? node.tag_count : ''}</span>
       </div>
       {isExpanded && hasChildren && (
@@ -80,6 +87,7 @@ function TreeNode({ node, nodes, depth, selectedId, expanded, onToggle, onSelect
               key={child.id}
               node={child}
               nodes={nodes}
+              alarmCounts={alarmCounts}
               depth={depth + 1}
               selectedId={selectedId}
               expanded={expanded}
@@ -436,6 +444,8 @@ export default function NodeTreePage() {
   const [showImportModal, setShowImportModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [treeSearch, setTreeSearch] = useState('')
+  const [alarmCounts, setAlarmCounts] = useState<Record<string, number>>({})
 
   const loadNodes = async () => {
     setLoading(true)
@@ -477,6 +487,35 @@ export default function NodeTreePage() {
     loadCategories()
   }, [])
 
+  useEffect(() => {
+    if (nodes.length === 0) return
+    fetchAlarmCounts(nodes.map((n) => n.id))
+      .then(setAlarmCounts)
+      .catch(() => {})
+  }, [nodes])
+
+  const filteredNodes = useMemo(() => {
+    if (!treeSearch.trim()) return nodes
+    const term = treeSearch.trim().toLowerCase()
+    const matched = new Set<string>()
+    // 先找匹配节点
+    nodes.forEach((n) => {
+      if (n.name.toLowerCase().includes(term) || (n.node_type || '').toLowerCase().includes(term)) {
+        matched.add(n.id)
+      }
+    })
+    // 把父节点链加进来
+    const addAncestors = (id: string) => {
+      const n = nodes.find((x) => x.id === id)
+      if (n?.parent_id) {
+        matched.add(n.parent_id)
+        addAncestors(n.parent_id)
+      }
+    }
+    matched.forEach(addAncestors)
+    return nodes.filter((n) => matched.has(n.id))
+  }, [nodes, treeSearch])
+
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedId),
     [nodes, selectedId]
@@ -496,6 +535,7 @@ export default function NodeTreePage() {
   }, [selectedNode, rules])
 
   const roots = useMemo(() => nodes.filter((n) => !n.parent_id).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)), [nodes])
+  const filteredRoots = useMemo(() => filteredNodes.filter((n) => !n.parent_id).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)), [filteredNodes])
 
   const canAddChild = selectedNode ? selectedNode.layer < 5 : true
 
@@ -535,12 +575,22 @@ export default function NodeTreePage() {
             </button>
           </div>
         </div>
+        <div className="mb-2">
+          <input
+            type="text"
+            value={treeSearch}
+            onChange={(e) => setTreeSearch(e.target.value)}
+            placeholder="搜索节点..."
+            className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
+          />
+        </div>
         <div className="flex-1 overflow-y-auto table-container pr-1">
-          {roots.map((root) => (
+          {filteredRoots.map((root) => (
             <TreeNode
               key={root.id}
               node={root}
-              nodes={nodes}
+              nodes={filteredNodes}
+              alarmCounts={alarmCounts}
               depth={0}
               selectedId={selectedId}
               expanded={expanded}
@@ -548,8 +598,10 @@ export default function NodeTreePage() {
               onSelect={setSelectedId}
             />
           ))}
-          {roots.length === 0 && !loading && (
-            <div className="text-xs text-gray-400 py-4 text-center">暂无节点，点击「+ 子节点」创建根节点</div>
+          {filteredRoots.length === 0 && !loading && (
+            <div className="text-xs text-gray-400 py-4 text-center">
+              {treeSearch ? '无匹配节点' : '暂无节点，点击「+ 子节点」创建根节点'}
+            </div>
           )}
         </div>
       </div>

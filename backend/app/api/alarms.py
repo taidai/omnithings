@@ -101,6 +101,44 @@ async def list_alarms(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/alarms/counts")
+async def alarm_counts(
+    node_ids: list[str] | None = Query(None, description="节点 ID 列表，逗号分隔"),
+) -> dict:
+    """按节点统计未恢复告警数量，用于节点树角标。"""
+    from app.services.telemetry_store import get_connection
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if node_ids:
+                try:
+                    uuids = [UUID(nid) for nid in node_ids]
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid node_id in list")
+                placeholders = ",".join(["%s"] * len(uuids))
+                cur.execute(
+                    f"""
+                    SELECT node_id, COUNT(*) AS cnt
+                    FROM t_alarms
+                    WHERE resolved_at IS NULL AND node_id IN ({placeholders})
+                    GROUP BY node_id
+                    """,
+                    uuids,
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT node_id, COUNT(*) AS cnt
+                    FROM t_alarms
+                    WHERE resolved_at IS NULL
+                    GROUP BY node_id
+                    """
+                )
+            counts = {str(row[0]): row[1] for row in cur.fetchall()}
+
+    return {"counts": counts}
+
+
 @router.post("/alarms")
 async def create_alarm(req: AlarmCreateRequest) -> dict:
     """手动创建一条告警（用于测试）。"""

@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  fetchTags, updateTag, batchUpdateTags, connectTelemetryWS,
-  type Tag, type TelemetryUpdate,
+  fetchTags, updateTag, batchUpdateTags, deleteTag, createTag, fetchNodes, fetchAlarmCounts, connectTelemetryWS,
+  type Tag, type TelemetryUpdate, type TagCreateInput,
 } from '../api/client'
 import EditableCell from './EditableCell'
 import TrendChart from './TrendChart'
+import type { Node } from '../api/client'
 
 const SORTABLE_COLUMNS = [
   { key: 'name', label: '点位名' },
   { key: 'data_type', label: '类型' },
+  { key: 'tag_type', label: '点位类型' },
   { key: 'unit', label: '单位' },
   { key: 'raw_value', label: '原始值' },
   { key: 'eng_value', label: '工程值' },
   { key: 'scale_factor', label: 'Scale' },
   { key: 'value_offset', label: 'Offset' },
+  { key: 'quality', label: '质量' },
+  { key: 'latest_ts', label: '最后更新' },
 ] as const
 
 interface NodeTagPanelProps {
@@ -25,6 +29,9 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [dataType, setDataType] = useState('')
+  const [tagType, setTagType] = useState('')
+  const [readWrite, setReadWrite] = useState('')
+  const [showDisabled, setShowDisabled] = useState(false)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
@@ -34,8 +41,15 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batchScale, setBatchScale] = useState('')
   const [batchOffset, setBatchOffset] = useState('')
+  const [batchUnit, setBatchUnit] = useState('')
+  const [batchReadWrite, setBatchReadWrite] = useState('')
+  const [batchEnabled, setBatchEnabled] = useState<boolean | ''>('')
+  const [batchTargetNode, setBatchTargetNode] = useState('')
+  const [nodes, setNodes] = useState<Node[]>([])
   const [batchSaving, setBatchSaving] = useState(false)
   const [trendTag, setTrendTag] = useState<Tag | null>(null)
+  const [editingTag, setEditingTag] = useState<Tag | null>(null)
+  const [showCreateModal, setShowCreateModal] = useState(false)
   const pageSize = 50
 
   const loadTags = useCallback(async () => {
@@ -47,6 +61,9 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
         pageSize,
         search || undefined,
         dataType || undefined,
+        tagType || undefined,
+        readWrite || undefined,
+        showDisabled ? undefined : true,
         sortBy,
         sortOrder,
       )
@@ -60,7 +77,11 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
 
   useEffect(() => {
     setPage(1)
-  }, [nodeId, search, dataType])
+  }, [nodeId, search, dataType, tagType, readWrite, showDisabled])
+
+  useEffect(() => {
+    fetchNodes().then(setNodes).catch(() => {})
+  }, [])
 
   useEffect(() => {
     loadTags()
@@ -118,16 +139,28 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
   const handleBatchApply = async () => {
     const scale = batchScale ? parseFloat(batchScale) : undefined
     const offset = batchOffset ? parseFloat(batchOffset) : undefined
-    if (scale === undefined && offset === undefined) {
-      alert('请至少填写 Scale 或 Offset')
+    const updates: any = {}
+    if (scale !== undefined) updates.scale_factor = scale
+    if (offset !== undefined) updates.value_offset = offset
+    if (batchUnit !== '') updates.unit = batchUnit
+    if (batchReadWrite !== '') updates.read_write = batchReadWrite
+    if (batchEnabled !== '') updates.enabled = batchEnabled
+    if (batchTargetNode !== '') updates.node_id = batchTargetNode
+
+    if (Object.keys(updates).length === 0) {
+      alert('请至少选择一项批量操作')
       return
     }
     setBatchSaving(true)
     try {
-      await batchUpdateTags(Array.from(selectedIds), { scale_factor: scale, value_offset: offset })
+      await batchUpdateTags(Array.from(selectedIds), updates)
       setSelectedIds(new Set())
       setBatchScale('')
       setBatchOffset('')
+      setBatchUnit('')
+      setBatchReadWrite('')
+      setBatchEnabled('')
+      setBatchTargetNode('')
       loadTags()
     } catch {
       alert('批量更新失败')
@@ -138,6 +171,61 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
 
   const allSelected = tags.length > 0 && tags.every((t) => selectedIds.has(t.id))
   const someSelected = tags.some((t) => selectedIds.has(t.id))
+
+  const handleDeleteTag = async (tagId: string) => {
+    if (!confirm('确定删除该点位？相关历史数据将一并清除。')) return
+    try {
+      await deleteTag(tagId)
+      loadTags()
+    } catch (e: any) {
+      alert('删除失败: ' + (e.message || e))
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (!confirm(`确定删除选中的 ${selectedIds.size} 个点位？相关历史数据将一并清除。`)) return
+    setBatchSaving(true)
+    try {
+      await Promise.all(Array.from(selectedIds).map((id) => deleteTag(id)))
+      setSelectedIds(new Set())
+      loadTags()
+    } catch (e: any) {
+      alert('批量删除失败: ' + (e.message || e))
+    } finally {
+      setBatchSaving(false)
+    }
+  }
+
+  const handleSaveTag = async (form: Partial<TagCreateInput>) => {
+    try {
+      if (editingTag) {
+        await updateTag(editingTag.id, form)
+      } else {
+        await createTag({ node_id: nodeId, ...form } as any)
+      }
+      setEditingTag(null)
+      setShowCreateModal(false)
+      loadTags()
+    } catch (e: any) {
+      alert('保存失败: ' + (e.message || e))
+    }
+  }
+
+  const formatTs = (ts: string | null) => {
+    if (!ts) return '—'
+    const d = new Date(ts)
+    const now = new Date()
+    const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000)
+    if (diffSec < 60) return '刚刚'
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} 分钟前`
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} 小时前`
+    return d.toLocaleString('zh-CN')
+  }
+
+  const isOnline = (tag: Tag) => {
+    if (tag.quality === undefined || tag.quality === null) return false
+    return tag.quality >= 192
+  }
 
   return (
     <div className="space-y-3">
@@ -177,7 +265,13 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
           {loading ? '加载中...' : '刷新'}
         </button>
 
-        <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
+        <div className="ml-auto flex items-center gap-2 text-xs text-gray-500">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="neu-btn px-3 py-1.5 text-xs font-medium text-white bg-[#52c41a] hover:bg-[#389e0d]"
+          >
+            + 新建点位
+          </button>
           <span>共 {total} 个点位</span>
           <div className="flex items-center gap-1">
             <button
@@ -199,6 +293,46 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* 高级过滤 */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-gray-600 whitespace-nowrap">点位类型:</label>
+          <select
+            value={tagType}
+            onChange={(e) => setTagType(e.target.value)}
+            className="neu-input px-3 py-1.5 text-xs bg-transparent min-w-[100px]"
+          >
+            <option value="">全部</option>
+            <option value="PHYSICAL">PHYSICAL</option>
+            <option value="LOGICAL">LOGICAL</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-gray-600 whitespace-nowrap">读写:</label>
+          <select
+            value={readWrite}
+            onChange={(e) => setReadWrite(e.target.value)}
+            className="neu-input px-3 py-1.5 text-xs bg-transparent min-w-[80px]"
+          >
+            <option value="">全部</option>
+            <option value="R">R</option>
+            <option value="RW">RW</option>
+            <option value="W">W</option>
+          </select>
+        </div>
+
+        <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showDisabled}
+            onChange={(e) => setShowDisabled(e.target.checked)}
+            className="w-4 h-4 accent-[#52c41a]"
+          />
+          包含已禁用
+        </label>
       </div>
 
       {/* 批量编辑 */}
@@ -229,6 +363,57 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
               className="neu-input px-2 py-1 text-xs w-24"
             />
           </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-600">单位:</label>
+            <input
+              type="text"
+              value={batchUnit}
+              onChange={(e) => setBatchUnit(e.target.value)}
+              placeholder="统一单位"
+              className="neu-input px-2 py-1 text-xs w-24"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-600">读写:</label>
+            <select
+              value={batchReadWrite}
+              onChange={(e) => setBatchReadWrite(e.target.value)}
+              className="neu-input px-2 py-1 text-xs bg-transparent w-20"
+            >
+              <option value="">不变</option>
+              <option value="R">R</option>
+              <option value="RW">RW</option>
+              <option value="W">W</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-600">启用:</label>
+            <select
+              value={batchEnabled === '' ? '' : String(batchEnabled)}
+              onChange={(e) => {
+                const v = e.target.value
+                setBatchEnabled(v === '' ? '' : v === 'true')
+              }}
+              className="neu-input px-2 py-1 text-xs bg-transparent w-24"
+            >
+              <option value="">不变</option>
+              <option value="true">启用</option>
+              <option value="false">禁用</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-600">移动到:</label>
+            <select
+              value={batchTargetNode}
+              onChange={(e) => setBatchTargetNode(e.target.value)}
+              className="neu-input px-2 py-1 text-xs bg-transparent min-w-[120px]"
+            >
+              <option value="">不移动</option>
+              {nodes.map((n) => (
+                <option key={n.id} value={n.id}>{n.name}</option>
+              ))}
+            </select>
+          </div>
           <button
             onClick={handleBatchApply}
             disabled={batchSaving}
@@ -237,10 +422,25 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
             {batchSaving ? '应用中...' : '批量应用'}
           </button>
           <button
-            onClick={() => { setSelectedIds(new Set()); setBatchScale(''); setBatchOffset('') }}
+            onClick={() => {
+              setSelectedIds(new Set())
+              setBatchScale('')
+              setBatchOffset('')
+              setBatchUnit('')
+              setBatchReadWrite('')
+              setBatchEnabled('')
+              setBatchTargetNode('')
+            }}
             className="neu-btn px-3 py-1.5 text-xs text-gray-500"
           >
             取消选择
+          </button>
+          <button
+            onClick={handleBatchDelete}
+            disabled={batchSaving}
+            className="neu-btn px-3 py-1.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50"
+          >
+            批量删除
           </button>
         </div>
       )}
@@ -277,6 +477,7 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
                   </th>
                 ))}
                 <th className="text-center px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">公式</th>
+                <th className="text-center px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -318,6 +519,11 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
                         'bg-gray-100 text-gray-600'
                       }`}>{tag.data_type}</span>
                     </td>
+                    <td className="px-3 py-2">
+                      <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                        tag.tag_type === 'PHYSICAL' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'
+                      }`}>{tag.tag_type}</span>
+                    </td>
                     <td className="px-3 py-2 text-gray-500">{tag.unit || '—'}</td>
                     <td className={`px-3 py-2 text-right font-mono-value ${rt ? 'value-flash' : ''}`}>
                       {rawVal !== null && rawVal !== undefined ? (
@@ -339,17 +545,44 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
                     <td className="px-3 py-2 text-right">
                       <EditableCell value={tag.value_offset} onSave={(v) => handleUpdateOffset(tag.id, v)} />
                     </td>
+                    <td className="px-3 py-2 text-center">
+                      <span
+                        className={`inline-block w-2 h-2 rounded-full mr-1 ${isOnline(tag) ? 'bg-green-500' : 'bg-gray-300'}`}
+                        title={isOnline(tag) ? '质量良好' : `quality=${tag.quality ?? '—'}`}
+                      />
+                      <span className="text-[11px] text-gray-500">{tag.quality ?? '—'}</span>
+                    </td>
+                    <td className="px-3 py-2 text-[11px] text-gray-500">
+                      {formatTs(tag.latest_ts)}
+                    </td>
                     <td className="px-3 py-2 text-center text-[11px] text-gray-400 font-mono-value">
+                      {!tag.enabled && <span className="text-red-500 mr-1">[已禁用]</span>}
                       ({rawVal !== null ? (typeof rawVal === 'number' ? rawVal.toFixed(1) : '?') : '?'}
                       {tag.value_offset >= 0 ? '+' : ''}{tag.value_offset})×{tag.scale_factor}
                       ={engVal !== null ? (typeof engVal === 'number' ? engVal.toFixed(2) : '?') : '?'}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => setEditingTag(tag)}
+                          className="text-[11px] text-[#389e0d] hover:underline"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTag(tag.id)}
+                          className="text-[11px] text-red-500 hover:underline"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
               })}
               {tags.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
+                  <td colSpan={12} className="px-3 py-8 text-center text-gray-400">
                     该节点下暂无点位
                   </td>
                 </tr>
@@ -367,6 +600,178 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
           onClose={() => setTrendTag(null)}
         />
       )}
+
+      {(editingTag || showCreateModal) && (
+        <TagFormModal
+          tag={editingTag}
+          nodeId={nodeId}
+          onClose={() => { setEditingTag(null); setShowCreateModal(false) }}
+          onSave={handleSaveTag}
+        />
+      )}
+    </div>
+  )
+}
+
+function TagFormModal({
+  tag,
+  nodeId,
+  onClose,
+  onSave,
+}: {
+  tag: Tag | null
+  nodeId: string
+  onClose: () => void
+  onSave: (form: Partial<TagCreateInput>) => void | Promise<void>
+}) {
+  const isEdit = !!tag
+  const [name, setName] = useState(tag?.name || '')
+  const [displayName, setDisplayName] = useState(tag?.display_name || '')
+  const [dataType, setDataType] = useState(tag?.data_type || 'FLOAT')
+  const [tagType, setTagType] = useState(tag?.tag_type || 'PHYSICAL')
+  const [unit, setUnit] = useState(tag?.unit || '')
+  const [readWrite, setReadWrite] = useState(tag?.read_write || 'R')
+  const [description, setDescription] = useState(tag?.description || '')
+  const [sourcePath, setSourcePath] = useState(tag?.source_path || '')
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) {
+      alert('点位名不能为空')
+      return
+    }
+    setSaving(true)
+    const form: Partial<TagCreateInput> = {
+      name: name.trim(),
+      display_name: displayName.trim() || undefined,
+      data_type: dataType,
+      tag_type: tagType as 'PHYSICAL' | 'LOGICAL',
+      unit: unit.trim() || undefined,
+      description: description.trim() || undefined,
+      read_write: readWrite,
+      source_path: sourcePath.trim() || undefined,
+    }
+    try {
+      await onSave(form)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="neu-card w-[480px] max-w-[90vw] p-5 max-h-[90vh] overflow-y-auto">
+        <h3 className="text-sm font-bold text-gray-800 mb-4">{isEdit ? '编辑点位' : '新建点位'}</h3>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">点位名 *</label>
+              <input
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={isEdit}
+                className="neu-input w-full px-3 py-1.5 text-xs disabled:bg-gray-100"
+                placeholder="例如：PCS功率"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">显示名</label>
+              <input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="neu-input w-full px-3 py-1.5 text-xs"
+                placeholder="例如：PCS 有功功率"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">数据类型</label>
+              <select
+                value={dataType}
+                onChange={(e) => setDataType(e.target.value)}
+                className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
+              >
+                <option value="FLOAT">FLOAT</option>
+                <option value="INT">INT</option>
+                <option value="BOOL">BOOL</option>
+                <option value="STRING">STRING</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">点位类型</label>
+              <select
+                value={tagType}
+                onChange={(e) => setTagType(e.target.value)}
+                className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
+              >
+                <option value="PHYSICAL">PHYSICAL</option>
+                <option value="LOGICAL">LOGICAL</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">读写</label>
+              <select
+                value={readWrite}
+                onChange={(e) => setReadWrite(e.target.value)}
+                className="neu-input w-full px-3 py-1.5 text-xs bg-transparent"
+              >
+                <option value="R">R</option>
+                <option value="RW">RW</option>
+                <option value="W">W</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">单位</label>
+              <input
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                className="neu-input w-full px-3 py-1.5 text-xs"
+                placeholder="kW"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">来源路径</label>
+              <input
+                value={sourcePath}
+                onChange={(e) => setSourcePath(e.target.value)}
+                className="neu-input w-full px-3 py-1.5 text-xs"
+                placeholder="neuron/node/group/tag"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">描述</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="neu-input w-full px-3 py-1.5 text-xs"
+              rows={2}
+              placeholder="点位用途说明"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="neu-btn px-4 py-1.5 text-xs text-gray-600">
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="neu-btn px-4 py-1.5 text-xs font-medium text-white bg-[#52c41a] hover:bg-[#389e0d] disabled:opacity-50"
+            >
+              {saving ? '保存中...' : '保存'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

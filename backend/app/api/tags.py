@@ -35,6 +35,7 @@ class TagUpdateRequest(BaseModel):
     read_write: str | None = Field(None, pattern="^[RrWw]+$", description="读写权限")
     enabled: bool | None = Field(None, description="是否启用")
     description: str | None = Field(None, description="描述")
+    source_path: str | None = Field(None, description="来源路径")
     # LogicalTag 汇总规则字段 (S11)
     aggregate_fn: str | None = Field(None, description="聚合函数 SUM/AVG/MAX/MIN/COUNT/LAST")
     formula: str | None = Field(None, description="表达式或聚合来源引用")
@@ -129,6 +130,8 @@ def _coerce_latest_value(tag: dict) -> None:
 async def list_tags(
     node_id: str | None = Query(None, description="按节点过滤"),
     data_type: str | None = Query(None, description="按数据类型过滤"),
+    tag_type: str | None = Query(None, description="按点位类型过滤 PHYSICAL/LOGICAL"),
+    read_write: str | None = Query(None, description="按读写权限过滤 R/RW/W"),
     search: str | None = Query(None, description="按名称/显示名模糊搜索"),
     enabled: bool = Query(True, description="只看启用点位"),
     page: int = Query(1, ge=1, description="页码"),
@@ -152,6 +155,12 @@ async def list_tags(
     if data_type:
         conditions.append("t.data_type = %s")
         params.append(data_type.upper())
+    if tag_type:
+        conditions.append("t.tag_type = %s")
+        params.append(tag_type.upper())
+    if read_write:
+        conditions.append("t.read_write = %s")
+        params.append(read_write.upper())
     if search:
         conditions.append("(t.name ILIKE %s OR t.display_name ILIKE %s)")
         params.extend([f"%{search}%", f"%{search}%"])
@@ -168,6 +177,8 @@ async def list_tags(
         # raw_value/eng_value 在 Python 层从 value_* 列构造，不支持 SQL 排序
         "raw_value": "latest.value_float",
         "eng_value": "latest.value_float",
+        "quality": "latest.quality",
+        "latest_ts": "latest.ts",
         "scale_factor": "t.scale_factor",
         "value_offset": "t.value_offset",
         "sort_order": "t.sort_order",
@@ -458,12 +469,17 @@ class BatchUpdateRequest(BaseModel):
     tag_ids: list[str] = Field(..., description="点位 ID 列表")
     scale_factor: float | None = Field(None, description="统一缩放系数")
     value_offset: float | None = Field(None, description="统一偏移量")
+    unit: str | None = Field(None, description="统一单位")
+    read_write: str | None = Field(None, pattern="^[RrWw]+$", description="统一读写权限")
+    enabled: bool | None = Field(None, description="统一启用状态")
+    node_id: str | None = Field(None, description="统一移动到目标节点 UUID")
 
 
 @router.put("/tags/batch")
 async def batch_update_tags(req: BatchUpdateRequest) -> dict:
     """
-    批量更新点位的 scale_factor / value_offset。
+    批量更新点位的 scale_factor / value_offset / unit / read_write / enabled，
+    或批量移动到新的 node_id。
     """
     from app.services.telemetry_store import get_connection
 
@@ -478,6 +494,22 @@ async def batch_update_tags(req: BatchUpdateRequest) -> dict:
     if req.value_offset is not None:
         updates.append("value_offset = %s")
         params.append(req.value_offset)
+    if req.unit is not None:
+        updates.append("unit = %s")
+        params.append(req.unit)
+    if req.read_write is not None:
+        updates.append("read_write = %s")
+        params.append(req.read_write.upper())
+    if req.enabled is not None:
+        updates.append("enabled = %s")
+        params.append(req.enabled)
+    if req.node_id is not None:
+        try:
+            target_node = UUID(req.node_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid node_id (not a UUID)")
+        updates.append("node_id = %s")
+        params.append(target_node)
 
     if not updates:
         return {"status": "no_change", "updated": 0}
@@ -499,6 +531,37 @@ async def batch_update_tags(req: BatchUpdateRequest) -> dict:
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                # 若移动节点，校验目标节点存在
+                if req.node_id is not None:
+                    cur.execute("SELECT id FROM t_nodes WHERE id = %s", (target_node,))
+                    if not cur.fetchone():
+                        raise HTTPException(status_code=404, detail="Target node not found")
+
+                    # 避免目标节点内出现同名点位
+                    placeholders = ",".join(["%s"] * len(uuid_params))
+                    cur.execute(
+                        f"""
+                        SELECT t.name
+                        FROM t_tags t
+                        WHERE t.node_id = %s AND t.id NOT IN ({placeholders})
+                        """,
+                        [target_node] + uuid_params,
+                    )
+                    existing_names = {r[0] for r in cur.fetchall()}
+                    cur.execute(
+                        f"""
+                        SELECT name FROM t_tags WHERE id IN ({placeholders})
+                        """,
+                        uuid_params,
+                    )
+                    moving_names = {r[0] for r in cur.fetchall()}
+                    conflicts = existing_names & moving_names
+                    if conflicts:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"Duplicate tag names in target node: {sorted(conflicts)}",
+                        )
+
                 cur.execute(query, params)
                 conn.commit()
                 updated = cur.rowcount
@@ -507,6 +570,25 @@ async def batch_update_tags(req: BatchUpdateRequest) -> dict:
     except Exception as e:
         logger.error("[API/tags/batch] Update failed: {}", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/tags/{tag_id}")
+async def delete_tag(tag_id: UUID) -> dict:
+    """删除单个点位及其历史遥测、最新值缓存。"""
+    from app.services.telemetry_store import get_connection
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM t_tags WHERE id = %s", (tag_id,))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Tag not found")
+
+            # t_telemetry / t_telemetry_latest / t_alarms 均已外键级联删除
+            cur.execute("DELETE FROM t_tags WHERE id = %s", (tag_id,))
+            conn.commit()
+
+    logger.info("[API/tags] deleted tag {}", tag_id)
+    return {"status": "ok", "deleted": str(tag_id)}
 
 
 @router.put("/tags/{tag_id}")
@@ -693,6 +775,8 @@ class TagCreateRequest(BaseModel):
     display_name: str | None = Field(None, description="显示名称")
     unit: str | None = Field(None, description="单位")
     description: str | None = Field(None, description="描述")
+    read_write: str = Field("R", pattern="^[RrWw]+$", description="读写权限")
+    source_path: str | None = Field(None, description="来源路径")
     # LogicalTag 汇总规则
     aggregate_fn: str | None = Field(None, description="聚合函数 SUM/AVG/MAX/MIN/COUNT/LAST")
     formula: str | None = Field(None, description="表达式或聚合来源引用")
@@ -754,14 +838,14 @@ async def create_tag(req: TagCreateRequest) -> dict:
                 cur.execute(
                     """
                     INSERT INTO t_tags (node_id, name, display_name, data_type, tag_type,
-                                        unit, description, read_write,
+                                        unit, description, read_write, source_path,
                                         aggregate_fn, formula, formula_type, sources, enabled)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'R', %s, %s, %s, %s, TRUE)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
                     RETURNING id
                     """,
                     (
                         node_uuid, req.name, req.display_name, data_type, req.tag_type,
-                        req.unit, req.description,
+                        req.unit, req.description, req.read_write.upper(), req.source_path,
                         req.aggregate_fn, req.formula,
                         req.formula_type if req.tag_type == "LOGICAL" else None,
                         source_uuids,
