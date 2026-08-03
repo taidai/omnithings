@@ -133,8 +133,53 @@ export default function AdminPanel() {
           </button>
           {configMsg && <span className="text-xs text-[#389e0d]">{configMsg}</span>}
         </div>
+       <p className="text-[11px] text-gray-400 mt-2">
+         批量大小：缓冲区达到该条数时立即写入 DB · Flush 间隔：定时强制写入的时间间隔
+       </p>
+     </div>
+
+      {/* MQTT 北向主题配置 */}
+      <div className="neu-card p-4">
+        <h3 className="text-sm font-bold text-gray-800 mb-3">MQTT 北向主题配置</h3>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+            <label className="text-xs text-gray-600 whitespace-nowrap">订阅主题:</label>
+            <input
+              type="text"
+              value={mqttConfig.mqtt_telemetry_topic}
+              onChange={(e) => setMqttConfig({ ...mqttConfig, mqtt_telemetry_topic: e.target.value })}
+              placeholder="例如 /neuron/# 或 telemetry/#,/neuron/#"
+              className="neu-input px-2 py-1 text-xs flex-1"
+            />
+          </div>
+          <button
+            onClick={handleSaveMqtt}
+            disabled={mqttSaving}
+            className="neu-btn px-4 py-1.5 text-xs font-medium text-white bg-[#52c41a] hover:bg-[#389e0d] disabled:opacity-50"
+          >
+            {mqttSaving ? '保存中...' : '保存并重订阅'}
+          </button>
+          {mqttMsg && <span className="text-xs text-[#389e0d]">{mqttMsg}</span>}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 items-center">
+          <span className="text-[11px] text-gray-500">当前生效主题:</span>
+          {mqttConfig.effective_topics.length === 0 ? (
+            <span className="text-[11px] text-gray-400">无</span>
+          ) : (
+            mqttConfig.effective_topics.map((t) => (
+              <span key={t} className="px-2 py-0.5 rounded text-[11px] bg-blue-100 text-blue-700">
+                {t}
+              </span>
+            ))
+          )}
+        </div>
+        {mqttConfig.persisted && mqttConfig.persisted !== mqttConfig.mqtt_telemetry_topic && (
+          <p className="text-[11px] text-gray-400 mt-2">
+            数据库持久化值: <span className="font-mono">{mqttConfig.persisted}</span>（保存后覆盖）
+          </p>
+        )}
         <p className="text-[11px] text-gray-400 mt-2">
-          批量大小：缓冲区达到该条数时立即写入 DB · Flush 间隔：定时强制写入的时间间隔
+          支持逗号分隔多个主题，支持 + / # 通配符。保存后后端会取消旧订阅并立即订阅新主题，确保 Neuron 北向 MQTT 数据流入。
         </p>
       </div>
 
