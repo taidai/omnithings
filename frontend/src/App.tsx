@@ -54,7 +54,7 @@ export default function App() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] flex">
+    <div className="min-h-screen bg-[#e8e8e8] flex">
       {/* 侧边栏 */}
       <aside className="w-56 neu-card m-4 mr-0 p-3 flex flex-col">
         <div className="mb-6 px-2 pt-1">

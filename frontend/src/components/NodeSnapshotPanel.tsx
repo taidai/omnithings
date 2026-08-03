@@ -106,7 +106,7 @@ export default function NodeSnapshotPanel({ nodeId }: NodeSnapshotPanelProps) {
       <div className="neu-card overflow-hidden">
         <div className="table-container overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-[#f0f2f5] z-10">
+            <thead className="sticky top-0 bg-[#f0f0f0] z-10">
               <tr className="border-b border-gray-200">
                 <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider w-8"></th>
                 <th className="text-left px-3 py-2 font-medium text-gray-500 text-[11px] uppercase tracking-wider">时间</th>

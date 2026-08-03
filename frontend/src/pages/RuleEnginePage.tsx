@@ -359,7 +359,7 @@ function RuleForm({
   )
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#f0f2f5] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-[#f0f0f0] flex flex-col">
       <form onSubmit={handleSubmit} className="flex-1 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200/50 bg-white shadow-sm">

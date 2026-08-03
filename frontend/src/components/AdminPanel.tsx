@@ -145,7 +145,7 @@ export default function AdminPanel() {
             <div className="text-xs text-gray-500 mb-2">返回 {sqlResult.row_count} 行</div>
             <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-[#f0f2f5]">
+                <thead className="sticky top-0 bg-[#f0f0f0]">
                   <tr className="border-b border-gray-200">
                     {sqlResult.columns.map((col) => (
                       <th key={col} className="text-left px-2 py-1 font-medium text-gray-500 text-[11px] uppercase tracking-wider">

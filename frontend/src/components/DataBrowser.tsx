@@ -198,7 +198,7 @@ export default function DataBrowser() {
         <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
           {table === 't_telemetry' ? (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-[#f0f2f5]">
+              <thead className="sticky top-0 bg-[#f0f0f0]">
                 <tr className="border-b border-gray-200">
                   <th className="text-left px-2 py-1.5 font-medium text-gray-500 text-[11px] uppercase tracking-wider">时间</th>
                   <th className="text-left px-2 py-1.5 font-medium text-gray-500 text-[11px] uppercase tracking-wider">节点</th>
@@ -247,7 +247,7 @@ export default function DataBrowser() {
             </table>
           ) : (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-[#f0f2f5]">
+              <thead className="sticky top-0 bg-[#f0f0f0]">
                 <tr className="border-b border-gray-200">
                   <th className="text-left px-2 py-1.5 font-medium text-gray-500 text-[11px] uppercase tracking-wider">时间</th>
                   <th className="text-left px-2 py-1.5 font-medium text-gray-500 text-[11px] uppercase tracking-wider">节点</th>
