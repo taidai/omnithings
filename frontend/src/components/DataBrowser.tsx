@@ -74,16 +74,13 @@ export default function DataBrowser() {
     }
   }, [table, selectedNode, selectedTag, range, page])
 
-  // 筛选变化 → 重置页码并查询
-  useEffect(() => {
-    setPage(1)
-  }, [table, selectedNode, selectedTag, range])
+  // 筛选变化 → 重置页码
+ useEffect(() => {
+   setPage(1)
+ }, [table, selectedNode, selectedTag, range])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
 
-  const toggleRow = (key: string) => {
+ const toggleRow = (key: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
