@@ -555,10 +555,10 @@ export default function NodeTreePage() {
 
   return (
     <div className="flex gap-4 h-[calc(100vh-140px)] min-h-[500px]">
-      {/* 左侧节点树 */}
-      <div className="neu-card w-80 flex flex-col p-3 overflow-hidden">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-bold text-gray-800">节点树</h2>
+        {/* 左侧节点管理 */}
+       <div className="neu-card w-80 flex flex-col p-3 overflow-hidden">
+         <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-bold text-gray-800">节点管理</h2>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setNodeFormMode('create')}

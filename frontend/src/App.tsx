@@ -1,6 +1,7 @@
-﻿import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { fetchHealth, type HealthStatus } from './api/client'
 import AdminPanel from './components/AdminPanel'
+import { Network, Scale, Bell, Settings } from 'lucide-react'
 
 const NodeTreePage = lazy(() => import('./pages/NodeTreePage'))
 const RuleEnginePage = lazy(() => import('./pages/RuleEnginePage'))
@@ -44,11 +45,11 @@ function PipelineBar({ health }: { health: HealthStatus | null }) {
 
 type PageKey = 'tree' | 'rules' | 'alarms' | 'admin'
 
-const NAV_ITEMS: { key: PageKey; label: string; icon: string }[] = [
-  { key: 'tree', label: '节点树', icon: '⊞' },
-  { key: 'rules', label: '规则引擎', icon: '⚖' },
-  { key: 'alarms', label: '告警中心', icon: '🔔' },
-  { key: 'admin', label: '系统工具', icon: '⚙' },
+const NAV_ITEMS: { key: PageKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'tree', label: '节点管理', icon: <Network size={18} strokeWidth={1.8} /> },
+  { key: 'rules', label: '规则引擎', icon: <Scale size={18} strokeWidth={1.8} /> },
+  { key: 'alarms', label: '告警中心', icon: <Bell size={18} strokeWidth={1.8} /> },
+  { key: 'admin', label: '系统工具', icon: <Settings size={18} strokeWidth={1.8} /> },
 ]
 
 export default function App() {
@@ -92,16 +93,16 @@ export default function App() {
               key={item.key}
               onClick={() => setActivePage(item.key)}
               title={collapsed ? item.label : undefined}
-              className={`flex items-center rounded-lg text-xs font-medium transition-colors ${
-                collapsed ? 'w-10 h-10 justify-center px-0' : 'w-full gap-3 px-3 py-2'
+              className={`flex items-center rounded-xl text-sm font-medium transition-colors ${
+                collapsed ? 'w-10 h-10 justify-center px-0' : 'w-full gap-3 px-3 py-2.5'
               } ${
                 activePage === item.key
                   ? 'bg-[#52c41a] text-white shadow'
                   : 'text-gray-600 hover:bg-white/40'
               }`}
             >
-              <span className="text-sm">{item.icon}</span>
-              {!collapsed && item.label}
+              <span className="shrink-0">{item.icon}</span>
+              {!collapsed && <span className="truncate">{item.label}</span>}
             </button>
           ))}
         </nav>
