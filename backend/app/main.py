@@ -30,11 +30,11 @@ _pipeline = None
 # F3 聚合调度器引用
 _scheduler = None
 # 聚合 tick 间隔 (秒)
-AGGREGATION_INTERVAL_SEC = 10
+AGGREGATION_INTERVAL_SEC = 60
 # F1 公式 tick 间隔 (秒)，比聚合更频繁，保证虚拟点先产出
-FORMULA_INTERVAL_SEC = 5
+FORMULA_INTERVAL_SEC = 30
 # F2 规则 tick 间隔 (秒)
-RULE_INTERVAL_SEC = 10
+RULE_INTERVAL_SEC = 60
 
 
 def _load_version() -> str:
