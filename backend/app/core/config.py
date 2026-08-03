@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     mqtt_qos: int = 1
     # 订阅的 topic 模式 — Neuron 上报 telemetry 使用此前缀
     # 支持逗号分隔的多 topic，例如 "telemetry/#,/neuron/MQTT"
-    mqtt_telemetry_topic: str = "telemetry/#"
+    mqtt_telemetry_topic: str = "/neuron/#"
     # MQTT 连接保活
     mqtt_keepalive: int = 60
 
