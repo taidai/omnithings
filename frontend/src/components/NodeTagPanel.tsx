@@ -557,8 +557,9 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
                     </td>
                     <td className="px-3 py-2 text-center text-[11px] text-gray-400 font-mono-value">
                       {!tag.enabled && <span className="text-red-500 mr-1">[已禁用]</span>}
-                      ({rawVal !== null ? (typeof rawVal === 'number' ? rawVal.toFixed(1) : '?') : '?'}
-                      {tag.value_offset >= 0 ? '+' : ''}{tag.value_offset})×{tag.scale_factor}
+                      {rawVal !== null ? (typeof rawVal === 'number' ? rawVal.toFixed(1) : '?') : '?'}
+                      ×{tag.scale_factor}
+                      {tag.value_offset >= 0 ? '+' : ''}{tag.value_offset}
                       ={engVal !== null ? (typeof engVal === 'number' ? engVal.toFixed(2) : '?') : '?'}
                     </td>
                     <td className="px-3 py-2 text-center">

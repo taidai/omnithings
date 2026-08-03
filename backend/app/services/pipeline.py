@@ -387,6 +387,8 @@ class DataPipeline:
                         new_neuron_tag_map[(neuron_node, neuron_group, neuron_tag_name)] = (
                             node_id, tag_id, rule
                         )
+                        # 归一化规则同时按 Neuron tag 名索引，保证 normalizer 能找到
+                        new_rules[neuron_tag_name] = rule
 
             # 原子替换
             self._rules = new_rules

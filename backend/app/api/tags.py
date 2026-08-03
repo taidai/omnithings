@@ -29,7 +29,7 @@ _FORMULA_TYPES = {"expression", "aggregate", "condition"}
 class TagUpdateRequest(BaseModel):
     """允许修改的点位字段。"""
     scale_factor: float | None = Field(None, description="缩放系数")
-    value_offset: float | None = Field(None, description="偏移量（原始值 + offset）× scale = 工程值")
+    value_offset: float | None = Field(None, description="偏移量：工程值 = 原始值 × scale + offset")
     unit: str | None = Field(None, description="单位")
     display_name: str | None = Field(None, description="显示名称")
     read_write: str | None = Field(None, pattern="^[RrWw]+$", description="读写权限")
@@ -92,7 +92,9 @@ def _coerce_latest_value(tag: dict) -> None:
     """
     将 t_telemetry_latest 的 value_* 列转换为 API 层的 raw_value / eng_value。
 
-    数据库层已存储工程值（归一化后），因此 raw_value = eng_value（数值类型）。
+    数据库层存储的是工程值（归一化后）。原始值通过 scale/offset 反向推导：
+      工程值 = 原始值 × scale + offset
+      原始值 = (工程值 - offset) / scale
     由于 Neuron 上报值可能为浮点但 t_tags 配置为 INT，这里做跨列回退。
     BOOL/STRING 类型只返回 raw_value，eng_value 为 None。
     """
@@ -103,24 +105,35 @@ def _coerce_latest_value(tag: dict) -> None:
     value_str = tag.pop("value_str", None)
 
     if data_type == "BOOL":
-        raw = value_bool
+        eng = value_bool
     elif data_type == "STRING":
-        raw = value_str
+        eng = value_str
     elif data_type == "INT":
         # INT 配置优先取 value_int，缺失时回退 value_float
-        raw = value_int if value_int is not None else value_float
+        eng = value_int if value_int is not None else value_float
     else:  # FLOAT / 默认
         # FLOAT 配置优先取 value_float，缺失时回退 value_int
-        raw = value_float if value_float is not None else value_int
+        eng = value_float if value_float is not None else value_int
 
-    tag["raw_value"] = raw
+    scale = tag.get("scale_factor", 1.0) or 1.0
+    offset = tag.get("value_offset", 0.0) or 0.0
+
     if data_type in ("BOOL", "STRING"):
+        tag["raw_value"] = eng
         tag["eng_value"] = None
+        return
+
+    try:
+        eng_num = float(eng) if eng is not None else None
+    except (TypeError, ValueError):
+        eng_num = None
+
+    tag["eng_value"] = round(eng_num, 4) if eng_num is not None else None
+
+    if eng_num is not None and scale != 0:
+        tag["raw_value"] = round((eng_num - offset) / scale, 6)
     else:
-        try:
-            tag["eng_value"] = round(float(raw), 4) if raw is not None else None
-        except (TypeError, ValueError):
-            tag["eng_value"] = None
+        tag["raw_value"] = eng
 
 # ══════════════════════════════════════
 # Endpoints
