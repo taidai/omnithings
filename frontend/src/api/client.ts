@@ -999,6 +999,45 @@ export async function fetchEntitiesByNode(nodeId: string): Promise<{ items: Enti
   if (!res.ok) throw new Error(`Fetch entities by node failed: ${res.status}`)
   return res.json()
 }
+export async function fetchEntityBindings(params?: { node_id?: string; entity_id?: string }): Promise<{ bindings: (EntityBinding & { entity_name?: string; entity_display_name?: string; entity_type?: string; data_type?: string; unit?: string | null })[]; total: number }> {
+  const qs = new URLSearchParams()
+  if (params?.node_id) qs.set('node_id', params.node_id)
+  if (params?.entity_id) qs.set('entity_id', params.entity_id)
+  const res = await fetch(`${API_BASE}/entities/bindings?${qs}`)
+  if (!res.ok) throw new Error(`Fetch entity bindings failed: ${res.status}`)
+  return res.json()
+}
+
+export interface BatchBindingItem {
+  entity_id: string
+  tag_id: string
+  node_id: string
+  binding_type: 'PHYSICAL' | 'VIRTUAL'
+  brand?: string | null
+  priority?: number
+  enabled?: boolean
+}
+
+export async function batchBindEntityTags(bindings: BatchBindingItem[]): Promise<{ created: number; skipped: number; total: number }> {
+  const res = await fetch(`${API_BASE}/entities/bindings/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bindings }),
+  })
+  if (!res.ok) throw new Error(`Batch bind failed: ${res.status}`)
+  return res.json()
+}
+
+export async function batchUnbindEntityBindings(bindingIds: string[]): Promise<{ deleted: number }> {
+  const res = await fetch(`${API_BASE}/entities/bindings/batch`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ binding_ids: bindingIds }),
+  })
+  if (!res.ok) throw new Error(`Batch unbind failed: ${res.status}`)
+  return res.json()
+}
+
 
 export async function fetchEntityHistory(entityId: string, range = '1h', page = 1, pageSize = 500): Promise<{ points: { ts: string; value: number | string | boolean | null; quality: number }[]; total: number; page: number; page_size: number }> {
   const res = await fetch(`${API_BASE}/entities/${entityId}/history?range=${range}&page=${page}&page_size=${pageSize}`)

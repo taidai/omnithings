@@ -1,7 +1,7 @@
 {
   "name": "zizu-frontend",
   "private": true,
-  "version": "0.4.30",
+  "version": "0.4.31",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -29,4 +29,3 @@
     "vite": "^5.3.4"
   }
 }
-

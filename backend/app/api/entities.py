@@ -184,7 +184,6 @@ async def list_entities(
         logger.error("[API/entities] list failed: {}", e)
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post("/entities", status_code=status.HTTP_201_CREATED)
 async def create_entity(req: EntityCreateRequest) -> dict:
     """创建全局实体。"""
@@ -211,6 +210,199 @@ async def create_entity(req: EntityCreateRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BatchBindingItem(BaseModel):
+    entity_id: str = Field(..., description="实体 UUID")
+    tag_id: str = Field(..., description="点位 UUID")
+    node_id: str = Field(..., description="节点 UUID")
+    binding_type: str = Field(..., pattern="^(PHYSICAL|VIRTUAL)$")
+    brand: str | None = None
+    priority: int = Field(1, ge=1, description="绑定优先级，数字越小越优先")
+    enabled: bool = True
+
+class BatchBindRequest(BaseModel):
+    bindings: list[BatchBindingItem] = Field(..., min_length=1, max_length=200)
+
+class BatchUnbindRequest(BaseModel):
+    binding_ids: list[str] = Field(..., min_length=1, max_length=200)
+
+@router.get("/entities/bindings")
+async def list_bindings(
+    node_id: str | None = Query(None, description="按节点过滤"),
+    entity_id: str | None = Query(None, description="按实体过滤"),
+) -> dict:
+    """查询实体-点位绑定列表，支持按节点或实体过滤。"""
+    conditions = ["1=1"]
+    params: list = []
+
+    if node_id:
+        try:
+            params.append(UUID(node_id))
+            conditions.append("b.node_id = %s")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid node_id")
+    if entity_id:
+        try:
+            params.append(UUID(entity_id))
+            conditions.append("b.entity_id = %s")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid entity_id")
+
+    where = " AND ".join(conditions)
+    query = f"""
+    SELECT
+        b.id,
+        b.entity_id,
+        b.tag_id,
+        b.node_id,
+        b.binding_type,
+        b.brand,
+        b.priority,
+        b.enabled,
+        b.created_at,
+        t.name AS tag_name,
+        t.display_name AS tag_display_name,
+        n.name AS node_name,
+        e.name AS entity_name,
+        e.display_name AS entity_display_name,
+        e.entity_type,
+        e.data_type,
+        e.unit AS entity_unit
+    FROM t_entity_bindings b
+    JOIN t_tags t ON t.id = b.tag_id
+    JOIN t_nodes n ON n.id = b.node_id
+    JOIN t_entities e ON e.id = b.entity_id
+    WHERE {where}
+    ORDER BY b.priority ASC, e.name ASC, t.name ASC
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                columns = [desc[0] for desc in cur.description]
+                rows = [dict(zip(columns, row)) for row in cur.fetchall()]
+        return {
+            "bindings": [
+                {
+                    "id": str(r["id"]),
+                    "entity_id": str(r["entity_id"]),
+                    "tag_id": str(r["tag_id"]),
+                    "node_id": str(r["node_id"]),
+                    "binding_type": r["binding_type"],
+                    "brand": r.get("brand"),
+                    "priority": r["priority"],
+                    "enabled": r["enabled"],
+                    "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+                    "tag_name": r.get("tag_name"),
+                    "tag_display_name": r.get("tag_display_name"),
+                    "node_name": r.get("node_name"),
+                    "entity_name": r.get("entity_name"),
+                    "entity_display_name": r.get("entity_display_name"),
+                    "entity_type": r.get("entity_type"),
+                    "data_type": r.get("data_type"),
+                    "unit": r.get("entity_unit"),
+                }
+                for r in rows
+            ],
+            "total": len(rows),
+        }
+    except Exception as e:
+        logger.error("[API/entities] list bindings failed: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/entities/bindings/batch")
+async def batch_create_bindings(req: BatchBindRequest) -> dict:
+    """批量创建实体-点位绑定。重复绑定（同一 entity+tag）会自动跳过。"""
+    validated = []
+    for item in req.bindings:
+        try:
+            validated.append({
+                "entity_id": UUID(item.entity_id),
+                "tag_id": UUID(item.tag_id),
+                "node_id": UUID(item.node_id),
+                "binding_type": item.binding_type.upper(),
+                "brand": item.brand,
+                "priority": item.priority,
+                "enabled": item.enabled,
+            })
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid UUID in binding: {item}")
+
+    eids = list({v["entity_id"] for v in validated})
+    tids = list({v["tag_id"] for v in validated})
+    nids = list({v["node_id"] for v in validated})
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM t_entities WHERE id = ANY(%s)", (eids,))
+                existing_eids = {r[0] for r in cur.fetchall()}
+                cur.execute("SELECT id FROM t_tags WHERE id = ANY(%s)", (tids,))
+                existing_tids = {r[0] for r in cur.fetchall()}
+                cur.execute("SELECT id FROM t_nodes WHERE id = ANY(%s)", (nids,))
+                existing_nids = {r[0] for r in cur.fetchall()}
+
+        missing = [
+            i for i, v in enumerate(validated)
+            if v["entity_id"] not in existing_eids
+            or v["tag_id"] not in existing_tids
+            or v["node_id"] not in existing_nids
+        ]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Binding item {missing[0]} references non-existing entity/tag/node")
+
+        insert_sql = """
+        INSERT INTO t_entity_bindings
+          (entity_id, tag_id, node_id, binding_type, brand, priority, enabled)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (entity_id, tag_id) DO NOTHING
+        RETURNING id
+        """
+        created = 0
+        skipped = 0
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for v in validated:
+                    cur.execute(insert_sql, (
+                        v["entity_id"], v["tag_id"], v["node_id"],
+                        v["binding_type"], v["brand"], v["priority"], v["enabled"],
+                    ))
+                    if cur.fetchone():
+                        created += 1
+                    else:
+                        skipped += 1
+                conn.commit()
+
+        return {"created": created, "skipped": skipped, "total": len(validated)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[API/entities] batch bind failed: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/entities/bindings/batch")
+async def batch_delete_bindings(req: BatchUnbindRequest) -> dict:
+    """批量删除实体-点位绑定。"""
+    try:
+        bids = [UUID(bid) for bid in req.binding_ids]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid binding_id")
+    if not bids:
+        return {"deleted": 0}
+
+    placeholders = ",".join(["%s"] * len(bids))
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"DELETE FROM t_entity_bindings WHERE id IN ({placeholders})",
+                    bids,
+                )
+                deleted = cur.rowcount
+                conn.commit()
+        return {"deleted": deleted}
+    except Exception as e:
+        logger.error("[API/entities] batch unbind failed: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
 @router.get("/entities/{entity_id}")
 async def get_entity(entity_id: str) -> dict:
     """获取实体详情及绑定。"""
