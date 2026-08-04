@@ -83,7 +83,7 @@ class MqttClient:
         if not connected:
             raise RuntimeError(f"MQTT connect timeout to {host}:{port}")
 
-        logger.info("[MQTT] Connected and subscribed to {}", settings.mqtt_telemetry_topics)
+        logger.info("[MQTT] Connected and subscribed to {}", settings.mqtt_telemetry_topics + settings.mqtt_alarm_topics)
         _global_client = self
 
     async def stop(self) -> None:
@@ -142,7 +142,7 @@ class MqttClient:
         return False
 
     def resubscribe(self, topics: list[str]) -> None:
-        """运行时重新订阅新的 topic 列表。"""
+        """运行时重新订阅新的 topic 列表（自动合并告警 topic）。"""
         with self._lock:
             if self._client is None or not self._connected.is_set():
                 logger.warning("[MQTT] Not connected, skip resubscribe")
@@ -151,8 +151,9 @@ class MqttClient:
             if self._subscribed_topics:
                 self._client.unsubscribe(self._subscribed_topics)
             # 订阅新列表
-            self._do_subscribe(self._client, topics)
-            logger.success("[MQTT] Resubscribed to {} topic(s): {}", len(topics), topics)
+            merged = list(set(topics + settings.mqtt_alarm_topics))
+            self._do_subscribe(self._client, merged)
+            logger.success("[MQTT] Resubscribed to {} topic(s): {}", len(merged), merged)
 
     # ══════════════════════════════
     # paho-mqtt 回调
@@ -161,7 +162,7 @@ class MqttClient:
     def _on_connect(self, client: mqtt.Client, userdata, flags, reason_code, properties):
         """连接成功回调 — 订阅所有配置的 topic。"""
         if reason_code == 0:
-            topics = settings.mqtt_telemetry_topics
+            topics = list(set(settings.mqtt_telemetry_topics + settings.mqtt_alarm_topics))
             self._do_subscribe(client, topics)
             self._connected.set()
             logger.success("[MQTT] Connected ✅, subscribed to {} topic(s)", len(topics))

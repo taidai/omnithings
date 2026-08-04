@@ -834,18 +834,27 @@ export async function fetchAlarms(
   page = 1,
   pageSize = 50,
   level?: AlarmLevel,
+  sourceKey?: string,
   acknowledged?: boolean,
   resolved?: boolean,
   nodeId?: string,
 ): Promise<AlarmListResponse> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   if (level) params.set('level', level)
+  if (sourceKey) params.set('source_key', sourceKey)
   if (acknowledged !== undefined) params.set('acknowledged', String(acknowledged))
   if (resolved !== undefined) params.set('resolved', String(resolved))
   if (nodeId) params.set('node_id', nodeId)
   const res = await fetch(`${API_BASE}/alarms?${params}`)
   if (!res.ok) throw new Error(`Fetch alarms failed: ${res.status}`)
   return res.json()
+}
+
+export async function fetchAlarmGroupCounts(): Promise<Record<string, number>> {
+  const res = await fetch(`${API_BASE}/alarms/group-counts`)
+  if (!res.ok) throw new Error(`Fetch alarm group counts failed: ${res.status}`)
+  const data = await res.json()
+  return data.counts || {}
 }
 
 export async function fetchAlarmCounts(nodeIds?: string[]): Promise<Record<string, number>> {

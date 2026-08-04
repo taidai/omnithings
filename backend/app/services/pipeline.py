@@ -35,7 +35,7 @@ from app.models.schemas import (
 from app.services.mqtt_client import MqttClient
 from app.services.normalizer import TagNormalizationRule, normalize
 from app.services.parser import parse_neuron_json
-from app.services.alarm_processor import process_alarm_message
+from app.services.alarm_processor import process_alarm_message, ERROR_LEVELS
 from app.services.telemetry_store import batch_insert_snapshots, batch_insert_telemetry, upsert_telemetry_latest, TelemetryRecord
 
 
@@ -200,6 +200,15 @@ class DataPipeline:
             self.metrics.messages_parse_error += 1
             return  # 跳过无法解析的消息
         self.metrics.messages_parsed_ok += 1
+
+        # 从普通 telemetry 消息中提取 error1/error2/error3 分组告警
+        if self._mqtt is not None and not self._mqtt.is_alarm_topic(raw.topic):
+            if any(k in ERROR_LEVELS for k in parsed.tags):
+                try:
+                    result = await asyncio.to_thread(process_alarm_message, raw.topic, raw.payload)
+                    logger.debug('[Pipeline] Extracted alarms from telemetry topic {}: {}', raw.topic, result)
+                except Exception as e:
+                    logger.error('[Pipeline] Alarm extraction failed: {}', e)
 
         # ── Hook 2: 归一化 (CPU 密集型，放到线程池避免阻塞事件循环) ──
         # 复制 rules 引用避免 reload 期间的竞态；dict 引用替换是原子的。

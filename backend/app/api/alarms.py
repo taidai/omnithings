@@ -39,6 +39,7 @@ def _serialize_alarm(row: dict) -> dict:
 @router.get("/alarms")
 async def list_alarms(
     level: str | None = Query(None, pattern="^(INFO|WARNING|MAJOR|CRITICAL)$"),
+    source_key: str | None = Query(None, pattern="^(error1|error2|error3)$"),
     acknowledged: bool | None = Query(None),
     resolved: bool | None = Query(None),
     node_id: UUID | None = Query(None),
@@ -53,6 +54,9 @@ async def list_alarms(
     if level:
         conditions.append("a.level = %s")
         params.append(level)
+    if source_key:
+        conditions.append("a.source_key = %s")
+        params.append(source_key)
     if acknowledged is not None:
         conditions.append("a.acknowledged = %s")
         params.append(acknowledged)
@@ -137,6 +141,29 @@ async def alarm_counts(
                 )
             counts = {str(row[0]): row[1] for row in cur.fetchall()}
 
+    return {"counts": counts}
+
+
+@router.get("/alarms/group-counts")
+async def alarm_group_counts() -> dict:
+    """按 error1/error2/error3 分组统计未恢复告警数量。"""
+    from app.services.telemetry_store import get_connection
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT source_key, COUNT(*) AS cnt
+                FROM t_alarms
+                WHERE resolved_at IS NULL AND source_key IN ('error1', 'error2', 'error3')
+                GROUP BY source_key
+                """
+            )
+            counts = {row[0]: row[1] for row in cur.fetchall()}
+
+    # 保证三个分组都有返回值
+    for key in ("error1", "error2", "error3"):
+        counts.setdefault(key, 0)
     return {"counts": counts}
 
 

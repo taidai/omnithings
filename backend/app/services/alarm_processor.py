@@ -1,6 +1,5 @@
 """M2.5 - MQTT 分级告警处理器"""
 
-
 from __future__ import annotations
 
 import json
@@ -19,6 +18,9 @@ ERROR_GROUP_MAP = {
 
 ERROR_LEVELS = {"error1", "error2", "error3"}
 
+# 可能嵌套出现 error1/2/3 的容器字段（兼容标准 Neuron payload 与自定义 payload）
+_NESTED_CONTAINER_KEYS = {"values", "tags", "data", "metrics", "payload"}
+
 
 def _is_active(value: Any) -> bool:
     if value is None:
@@ -35,39 +37,53 @@ def _is_active(value: Any) -> bool:
 def _build_message(external_id: str, value: Any, source_key: str) -> str:
     if isinstance(value, str) and value.strip():
         return f"[{source_key}] {value}"
-    return f"[{source_key}] {external_id} 告警"
+    if external_id:
+        return f"[{source_key}] {external_id} 告警"
+    return f"[{source_key}] 告警触发"
 
 
-def _iter_alarms(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _iter_error_groups(data: dict[str, Any], _depth: int = 0) -> dict[str, dict[str, Any]]:
+    """
+    在 payload 中递归收集 error1/error2/error3 分组。
+    返回: {source_key: {external_id: value}}
+    """
+    groups: dict[str, dict[str, Any]] = {k: {} for k in ERROR_LEVELS}
+    if not isinstance(data, dict) or _depth > 2:
+        return groups
+
+    for key, value in data.items():
+        if key in ERROR_LEVELS:
+            if isinstance(value, dict):
+                for external_id, val in value.items():
+                    groups[key][str(external_id)] = val
+            elif isinstance(value, list):
+                for item in value:
+                    if item is None or item == "":
+                        continue
+                    groups[key][str(item)] = 1
+            else:
+                # 标量 0/1 或字符串：用空 external_id 作为稳定标识，保证同一信号可恢复
+                groups[key][""] = value
+        elif key in _NESTED_CONTAINER_KEYS and isinstance(value, dict):
+            nested = _iter_error_groups(value, _depth + 1)
+            for level in ERROR_LEVELS:
+                groups[level].update(nested[level])
+
+    return groups
+
+
+def _alarms_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """把 error groups 展开为告警记录列表。"""
+    groups = _iter_error_groups(payload)
     alarms: list[dict[str, Any]] = []
-    for key, value in payload.items():
-        if key not in ERROR_LEVELS:
-            continue
-        level = ERROR_GROUP_MAP[key]
-        if isinstance(value, dict):
-            for external_id, val in value.items():
-                alarms.append({
-                    "source_key": key,
-                    "external_id": str(external_id),
-                    "level": level,
-                    "value": val,
-                })
-        elif isinstance(value, list):
-            for item in value:
-                if item is None or item == "":
-                    continue
-                alarms.append({
-                    "source_key": key,
-                    "external_id": str(item),
-                    "level": level,
-                    "value": 1,
-                })
-        else:
+    for source_key, items in groups.items():
+        level = ERROR_GROUP_MAP[source_key]
+        for external_id, value in items.items():
             alarms.append({
-                "source_key": key,
-                "external_id": str(value),
+                "source_key": source_key,
+                "external_id": external_id,
                 "level": level,
-                "value": 1,
+                "value": value,
             })
     return alarms
 
@@ -83,7 +99,7 @@ def process_alarm_message(topic: str, payload_bytes: bytes) -> dict:
         logger.debug("[Alarm] Non-dict payload on topic {}", topic)
         return {"created": 0, "resolved": 0, "skipped": 1}
 
-    alarms = _iter_alarms(payload)
+    alarms = _alarms_from_payload(payload)
     if not alarms:
         return {"created": 0, "resolved": 0, "skipped": 0}
 
@@ -132,4 +148,3 @@ def process_alarm_message(topic: str, payload_bytes: bytes) -> dict:
 
     logger.debug("[Alarm] topic={} created={} resolved={}", topic, created, resolved)
     return {"created": created, "resolved": resolved, "skipped": 0}
-
