@@ -76,3 +76,14 @@
 - 重新构建前端并部署到 2 号机 `/home/omnithings`
 - Health: `http://e606.hlszh.com:3724/api/v1/health` 返回 `version: 0.4.30`
 - 注意：2 号机 Web 端口为 3724，3723 为 SSH；远程目录/容器名仍为 omnithings
+
+## 本次补充（2026-08-04 节点融合全局实体）
+
+### 全局实体融合到节点管理
+- 后端 `/entities` 接口新增 `node_id` 过滤参数
+- 前端节点管理新增「全局实体」Tab
+- 每个节点可查看已绑定全局实体及其实时值
+- 支持在当前节点下将全局实体绑定到具体点位（物理/虚拟 + 品牌 + 优先级）
+- 新增组件：`frontend/src/components/NodeEntityPanel.tsx`
+- commit: `066182e feat(nodes): integrate global entities into node management`
+- 已部署 2 号机，health 返回 `version: 0.4.30`
