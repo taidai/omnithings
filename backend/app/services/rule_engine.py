@@ -18,6 +18,7 @@ F2 规则引擎 — 告警/控制/联动策略
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from uuid import UUID
 

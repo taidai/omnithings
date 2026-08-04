@@ -86,7 +86,7 @@ def resolve_entity_binding(entity_id: str | UUID) -> dict | None:
         return None
 
 
-def get_entity_realtime(entity_id: str | UUID) -> dict | None:
+def get_entity_realtime(entity_id_or_name: str | UUID) -> dict | None:
     """获取实体最新实时值。"""
     binding = resolve_entity_binding(entity_id_or_name)
     if not binding:
@@ -154,7 +154,7 @@ def get_entity_realtime(entity_id: str | UUID) -> dict | None:
 
 
 def get_entity_history(
-    entity_id: str | UUID,
+    entity_id_or_name: str | UUID,
     range_key: str = "1h",
     page: int = 1,
     page_size: int = 500,

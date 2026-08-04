@@ -122,6 +122,7 @@ export default function App() {
             {activePage === 'tree' && <NodeTreePage />}
             {activePage === 'rules' && <RuleEnginePage />}
             {activePage === 'alarms' && <AlarmCenterPage />}
+            {activePage === 'entities' && <EntityManagerPage />}
           </Suspense>
           {activePage === 'admin' && <AdminPanel />}
         </div>
