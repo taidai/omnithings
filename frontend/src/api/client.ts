@@ -990,6 +990,16 @@ export async function fetchEntityRealtime(entityId: string): Promise<EntityRealt
   return res.json()
 }
 
+export async function fetchEntitiesByNode(nodeId: string): Promise<{ items: Entity[]; total: number }> {
+  const qs = new URLSearchParams()
+  qs.set('node_id', nodeId)
+  qs.set('page', '1')
+  qs.set('page_size', '200')
+  const res = await fetch(`${API_BASE}/entities?${qs}`)
+  if (!res.ok) throw new Error(`Fetch entities by node failed: ${res.status}`)
+  return res.json()
+}
+
 export async function fetchEntityHistory(entityId: string, range = '1h', page = 1, pageSize = 500): Promise<{ points: { ts: string; value: number | string | boolean | null; quality: number }[]; total: number; page: number; page_size: number }> {
   const res = await fetch(`${API_BASE}/entities/${entityId}/history?range=${range}&page=${page}&page_size=${pageSize}`)
   if (!res.ok) throw new Error(`Fetch entity history failed: ${res.status}`)
@@ -1005,4 +1015,7 @@ export async function writeEntityValue(entityId: string, value: any): Promise<{ 
   if (!res.ok) throw new Error(`Write entity failed: ${res.status}`)
   return res.json()
 }
+
+
+
 

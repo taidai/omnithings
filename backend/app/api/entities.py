@@ -117,6 +117,7 @@ async def list_entities(
     entity_type: str | None = Query(None, description="按 R/W/RW 过滤"),
     search: str | None = Query(None, description="按名称/显示名搜索"),
     enabled: bool | None = Query(None, description="按启用状态过滤"),
+    node_id: str | None = Query(None, description="按节点绑定关系过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> dict:
@@ -125,17 +126,26 @@ async def list_entities(
     params: list = []
 
     if category:
-        conditions.append("category = %s")
+        conditions.append("e.category = %s")
         params.append(category)
     if entity_type:
-        conditions.append("entity_type = %s")
+        conditions.append("e.entity_type = %s")
         params.append(entity_type.upper())
     if enabled is not None:
-        conditions.append("enabled = %s")
+        conditions.append("e.enabled = %s")
         params.append(enabled)
     if search:
-        conditions.append("(name ILIKE %s OR display_name ILIKE %s)")
+        conditions.append("(e.name ILIKE %s OR e.display_name ILIKE %s)")
         params.extend([f"%{search}%", f"%{search}%"])
+
+    try:
+        nid = UUID(str(node_id)) if node_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid node_id")
+
+    if nid:
+        conditions.append("EXISTS (SELECT 1 FROM t_entity_bindings b WHERE b.entity_id = e.id AND b.node_id = %s AND b.enabled = TRUE)")
+        params.append(nid)
 
     where = " AND ".join(conditions)
     offset = (page - 1) * page_size
@@ -454,3 +464,4 @@ async def entity_write(entity_id: str, req: dict) -> dict:
     except Exception as e:
         logger.error("[API/entities] write failed: {}", e)
         raise HTTPException(status_code=500, detail=str(e))
+
