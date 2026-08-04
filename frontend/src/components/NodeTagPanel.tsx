@@ -505,10 +505,10 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
                         className="text-left hover:text-[#389e0d] transition-colors"
                         title="点击查看趋势"
                       >
-                        <div className="font-medium text-gray-800 underline decoration-dotted underline-offset-2 decoration-gray-300 hover:decoration-[#52c41a]">
+                        <div className="font-medium text-gray-800 whitespace-nowrap underline decoration-dotted underline-offset-2 decoration-gray-300 hover:decoration-[#52c41a]">
                           {tag.display_name || tag.name}
                         </div>
-                        <div className="text-gray-400 text-[11px]">{tag.name}</div>
+                        <div className="text-gray-400 text-[11px] whitespace-nowrap">{tag.name}</div>
                       </button>
                     </td>
                     <td className="px-3 py-2">
