@@ -881,3 +881,128 @@ export async function resolveAlarm(alarmId: string): Promise<void> {
   })
   if (!res.ok) throw new Error(`Resolve alarm failed: ${res.status}`)
 }
+// ── Global Entities ──
+
+export interface Entity {
+  id: string
+  name: string
+  display_name: string | null
+  entity_type: 'R' | 'W' | 'RW'
+  data_type: string
+  unit: string | null
+  category: string | null
+  description: string | null
+  enabled: boolean
+  binding_count: number
+}
+
+export interface EntityBinding {
+  id: string
+  entity_id: string
+  tag_id: string
+  node_id: string
+  binding_type: 'PHYSICAL' | 'VIRTUAL'
+  brand: string | null
+  priority: number
+  enabled: boolean
+  tag_name?: string
+  tag_display_name?: string
+  node_name?: string
+}
+
+export interface EntityRealtime {
+  entity_id: string
+  entity_name: string
+  entity_display_name: string | null
+  value: number | string | boolean | null
+  ts: string | null
+  unit: string | null
+  tag_id: string
+  tag_name: string
+  node_id: string
+  node_name: string
+}
+
+export async function fetchEntities(params?: { category?: string; entity_type?: string; search?: string; enabled?: boolean; page?: number; page_size?: number }): Promise<{ items: Entity[]; total: number; page: number; page_size: number; total_pages: number }> {
+  const qs = new URLSearchParams()
+  if (params?.category) qs.set('category', params.category)
+  if (params?.entity_type) qs.set('entity_type', params.entity_type)
+  if (params?.search) qs.set('search', params.search)
+  if (params?.enabled !== undefined) qs.set('enabled', String(params.enabled))
+  qs.set('page', String(params?.page || 1))
+  qs.set('page_size', String(params?.page_size || 50))
+  const res = await fetch(`${API_BASE}/entities?${qs}`)
+  if (!res.ok) throw new Error(`Fetch entities failed: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchEntity(entityId: string): Promise<Entity & { bindings: EntityBinding[] }> {
+  const res = await fetch(`${API_BASE}/entities/${entityId}`)
+  if (!res.ok) throw new Error(`Fetch entity failed: ${res.status}`)
+  return res.json()
+}
+
+export async function createEntity(input: Omit<Entity, 'id' | 'binding_count'>): Promise<{ id: string; created_at: string }> {
+  const res = await fetch(`${API_BASE}/entities`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(`Create entity failed: ${res.status}`)
+  return res.json()
+}
+
+export async function updateEntity(entityId: string, input: Partial<Omit<Entity, 'id'>>): Promise<{ updated: boolean; updated_at?: string }> {
+  const res = await fetch(`${API_BASE}/entities/${entityId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(`Update entity failed: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteEntity(entityId: string): Promise<{ deleted: boolean }> {
+  const res = await fetch(`${API_BASE}/entities/${entityId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`Delete entity failed: ${res.status}`)
+  return res.json()
+}
+
+export async function bindTagToEntity(entityId: string, input: Omit<EntityBinding, 'id' | 'entity_id' | 'tag_name' | 'tag_display_name' | 'node_name'>): Promise<{ id: string; created_at: string }> {
+  const res = await fetch(`${API_BASE}/entities/${entityId}/bindings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(`Bind tag failed: ${res.status}`)
+  return res.json()
+}
+
+export async function unbindTagFromEntity(entityId: string, bindingId: string): Promise<{ deleted: boolean }> {
+  const res = await fetch(`${API_BASE}/entities/${entityId}/bindings/${bindingId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`Unbind tag failed: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchEntityRealtime(entityId: string): Promise<EntityRealtime> {
+  const res = await fetch(`${API_BASE}/entities/${entityId}/realtime`)
+  if (!res.ok) throw new Error(`Fetch entity realtime failed: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchEntityHistory(entityId: string, range = '1h', page = 1, pageSize = 500): Promise<{ points: { ts: string; value: number | string | boolean | null; quality: number }[]; total: number; page: number; page_size: number }> {
+  const res = await fetch(`${API_BASE}/entities/${entityId}/history?range=${range}&page=${page}&page_size=${pageSize}`)
+  if (!res.ok) throw new Error(`Fetch entity history failed: ${res.status}`)
+  return res.json()
+}
+
+export async function writeEntityValue(entityId: string, value: any): Promise<{ status: string }> {
+  const res = await fetch(`${API_BASE}/entities/${entityId}/write`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  })
+  if (!res.ok) throw new Error(`Write entity failed: ${res.status}`)
+  return res.json()
+}
+

@@ -277,6 +277,21 @@ async def upsert_telemetry_latest(
                 return cur.rowcount
 
     upserted = await asyncio.to_thread(_upsert)
+    # 同步刷新全局实体最新值缓存
+    try:
+        from app.services.entity_resolver import refresh_entity_latest
+        for r in latest_by_tag.values():
+            refresh_entity_latest(
+                r.tag_id, r.node_id, r.ts,
+                value_float=r.value_float,
+                value_int=r.value_int,
+                value_bool=r.value_bool,
+                value_str=r.value_str,
+                quality=r.quality or Quality.GOOD.value,
+            )
+    except Exception as e:
+        logger.warning("[TSDB] Refresh entity latest failed (non-fatal): {}", e)
+
     logger.debug("[TSDB] Latest upsert {} records (deduped from {})", upserted, len(records))
     return upserted
 

@@ -27,8 +27,9 @@ from app.services.gorules_adapter import evaluate_rule
 
 
 def _build_context(cur, source_node_ids: set[str] | None = None) -> dict[str, dict[str, any]]:
-    """从 t_telemetry_latest 构建 tag_name -> {value, tag_id, node_id} 上下文。
+    """从 t_telemetry_latest 构建 tag_name + entity_name -> {value, tag_id, node_id} 上下文。
 
+    同时把全局实体名注入上下文，使规则引擎可直接使用业务语义变量（如 pcs.activePower）。
     若提供 source_node_ids，则只保留选中节点下的点位。
     """
     where = ""
@@ -72,6 +73,43 @@ def _build_context(cur, source_node_ids: set[str] | None = None) -> dict[str, di
             "tag_id": tag_id,
             "node_id": node_id,
         }
+    # 注入全局实体当前值
+    try:
+        cur.execute("""
+            SELECT e.name, e.id AS entity_id, b.id AS binding_id, b.tag_id, b.node_id,
+                   l.value_float, l.value_int, l.value_bool, l.value_str
+            FROM t_entities e
+            JOIN t_entity_bindings b ON b.entity_id = e.id
+            JOIN t_telemetry_latest l ON l.tag_id = b.tag_id AND l.node_id = b.node_id
+            WHERE e.enabled = TRUE
+              AND b.enabled = TRUE
+              AND b.priority = (
+                  SELECT MIN(b2.priority)
+                  FROM t_entity_bindings b2
+                  WHERE b2.entity_id = e.id AND b2.enabled = TRUE
+              )
+        """)
+        for name, entity_id, binding_id, tag_id, node_id, vf, vi, vb, vs in cur.fetchall():
+            value = None
+            if vb is not None:
+                value = vb
+            elif vs is not None:
+                value = vs
+            elif vf is not None:
+                value = vf
+            elif vi is not None:
+                value = vi
+            ctx[name] = {
+                "value": value,
+                "tag_id": tag_id,
+                "node_id": node_id,
+                "entity_id": entity_id,
+                "binding_id": binding_id,
+                "is_entity": True,
+            }
+    except Exception as e:
+        logger.warning("[RuleEngine] failed to load entity context (non-fatal): {}", e)
+
     return ctx
 
 
@@ -182,20 +220,42 @@ def _coerce_neuron_value(value: Any) -> Any:
 
 
 def _execute_neuron_write(cur, rule_id: UUID, action: dict, context: dict, outputs: dict | None = None) -> bool:
-    """通过 Neuron REST API 下发写点位指令。"""
-    from app.services.neuron_client import get_neuron_client
-
-    node = action.get("node")
-    group = action.get("group")
-    tag = action.get("tag")
+    """通过 Neuron REST API 下发写点位指令；支持直接写 entity。"""
     raw_value = action.get("value")
-    if not node or not group or not tag or raw_value is None:
-        logger.warning("[RuleEngine] neuron_write action missing node/group/tag/value: {}", action)
+    if raw_value is None:
+        logger.warning("[RuleEngine] neuron_write action missing value: {}", action)
         return False
 
     context_values = _context_values(context)
     value = _coerce_neuron_value(_resolve_value(raw_value, outputs, context_values))
 
+    # 优先按 entity 写回：规则引擎输出可作用于全局实体
+    entity_id = action.get("entity_id")
+    entity_name = action.get("entity")
+    if entity_id or entity_name:
+        from app.services.entity_resolver import write_entity_value
+        try:
+            target = entity_id or entity_name
+            result = write_entity_value(target, value)
+            _log_audit(cur, "ENTITY_WRITE", "entity", result.get("entity_id"), {
+                "rule_id": str(rule_id),
+                "entity_name": result.get("entity_name"),
+                "value": value,
+                "context": {k: v for k, v in context.items() if isinstance(v, (int, float, bool, str))},
+            })
+            return True
+        except Exception as e:
+            logger.error("[RuleEngine] entity write failed for rule {}: {}", rule_id, e)
+            return False
+
+    node = action.get("node")
+    group = action.get("group")
+    tag = action.get("tag")
+    if not node or not group or not tag:
+        logger.warning("[RuleEngine] neuron_write action missing node/group/tag: {}", action)
+        return False
+
+    from app.services.neuron_client import get_neuron_client
     try:
         client = get_neuron_client()
         client.write_tag(node, group, tag, value)
