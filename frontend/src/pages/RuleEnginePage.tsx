@@ -153,6 +153,113 @@ const TYPE_LABELS: Record<RuleCreateRequest['rule_type'], string> = {
   linkage: '联动 linkage',
 }
 
+
+interface TreeNode extends Node {
+  children: TreeNode[]
+}
+
+function buildTree(nodes: Node[], parentId: string | null = null): TreeNode[] {
+  return nodes
+    .filter((n) => n.parent_id === parentId)
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((n) => ({ ...n, children: buildTree(nodes, n.id) }))
+}
+
+function NodeTreeSelect({
+  nodes,
+  selectedIds,
+  expandedIds,
+  onToggleNode,
+  onToggleExpand,
+}: {
+  nodes: Node[]
+  selectedIds: string[]
+  expandedIds: Set<string>
+  onToggleNode: (id: string) => void
+  onToggleExpand: (id: string) => void
+}) {
+  const tree = useMemo(() => buildTree(nodes), [nodes])
+  if (!nodes.length) return null
+
+  return (
+    <div className="text-xs">
+      {tree.map((node) => (
+        <NodeTreeItem
+          key={node.id}
+          node={node}
+          depth={0}
+          selectedIds={selectedIds}
+          expandedIds={expandedIds}
+          onToggleNode={onToggleNode}
+          onToggleExpand={onToggleExpand}
+        />
+      ))}
+    </div>
+  )
+}
+
+function NodeTreeItem({
+  node,
+  depth,
+  selectedIds,
+  expandedIds,
+  onToggleNode,
+  onToggleExpand,
+}: {
+  node: TreeNode
+  depth: number
+  selectedIds: string[]
+  expandedIds: Set<string>
+  onToggleNode: (id: string) => void
+  onToggleExpand: (id: string) => void
+}) {
+  const checked = selectedIds.includes(node.id)
+  const expanded = expandedIds.has(node.id)
+  const hasChildren = node.children.length > 0
+  return (
+    <div>
+      <div
+        className="flex items-center gap-1 py-1 hover:bg-white/40 rounded pr-2"
+        style={{ paddingLeft: `${depth * 16}px` }}
+      >
+        {hasChildren ? (
+          <button
+            onClick={() => onToggleExpand(node.id)}
+            className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-600"
+            type="button"
+          >
+            {expanded ? '▼' : '▶'}
+          </button>
+        ) : (
+          <span className="w-5 h-5" />
+        )}
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={() => onToggleNode(node.id)}
+          className="w-4 h-4 accent-[#52c41a]"
+        />
+        <span className="truncate whitespace-nowrap text-gray-700" title={node.name}>{node.name}</span>
+      </div>
+      {expanded && hasChildren && (
+        <div>
+          {node.children.map((child) => (
+            <NodeTreeItem
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              selectedIds={selectedIds}
+              expandedIds={expandedIds}
+              onToggleNode={onToggleNode}
+              onToggleExpand={onToggleExpand}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function RuleForm({
   initial,
   templates,
@@ -175,6 +282,7 @@ function RuleForm({
   const [config, setConfig] = useState<RuleConfig>(initialConfig)
   const [nodes, setNodes] = useState<Node[]>([])
   const [nodeTags, setNodeTags] = useState<Record<string, NodeTag[]>>({})
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [simulate, setSimulate] = useState<any>()
@@ -184,7 +292,11 @@ function RuleForm({
   const [showRawActions, setShowRawActions] = useState(false)
 
   useEffect(() => {
-    fetchNodes().then(setNodes).catch(() => {})
+    fetchNodes().then((list) => {
+      setNodes(list)
+      const roots = list.filter((n) => !n.parent_id).map((n) => n.id)
+      if (roots.length) setExpandedIds(new Set(roots))
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -453,30 +565,26 @@ function RuleForm({
             <div className="flex flex-col gap-4 h-full">
               <div className="neu-card p-4 bg-white">
                 <h4 className="text-sm font-bold text-gray-800 mb-2">数据源节点</h4>
-                <p className="text-xs text-gray-500 mb-3">选择规则读取数据的节点（可多选）。不选则读取全库最新值。</p>
-                <div className="neu-inset p-3 max-h-[200px] overflow-y-auto">
+                <p className="text-xs text-gray-500 mb-3">在节点树中选择规则读取数据的节点（可多选）。不选则读取全库最新值。</p>
+                <div className="neu-inset p-3 max-h-[240px] overflow-y-auto">
                   {nodes.length === 0 && <p className="text-xs text-gray-400">暂无节点</p>}
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {nodes.map((n) => {
-                      const checked = config.sourceNodeIds.includes(n.id)
-                      return (
-                        <label key={n.id} className="flex items-center gap-2 p-2 rounded hover:bg-white/40 cursor-pointer text-xs">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              const next = new Set(config.sourceNodeIds)
-                              if (next.has(n.id)) next.delete(n.id)
-                              else next.add(n.id)
-                              setConfig({ ...config, sourceNodeIds: Array.from(next) })
-                            }}
-                            className="w-4 h-4 accent-[#52c41a]"
-                          />
-                          <span className="truncate" title={n.name}>{n.name}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
+                  <NodeTreeSelect
+                    nodes={nodes}
+                    selectedIds={config.sourceNodeIds}
+                    expandedIds={expandedIds}
+                    onToggleNode={(nodeId) => {
+                      const next = new Set(config.sourceNodeIds)
+                      if (next.has(nodeId)) next.delete(nodeId)
+                      else next.add(nodeId)
+                      setConfig({ ...config, sourceNodeIds: Array.from(next) })
+                    }}
+                    onToggleExpand={(nodeId) => {
+                      const next = new Set(expandedIds)
+                      if (next.has(nodeId)) next.delete(nodeId)
+                      else next.add(nodeId)
+                      setExpandedIds(next)
+                    }}
+                  />
                 </div>
               </div>
 
