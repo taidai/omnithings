@@ -252,36 +252,6 @@ export default function NodeHistoryPanel({ nodeId }: NodeHistoryPanelProps) {
         </div>
       </div>
 
-      {/* Tag selector */}
-      {viewMode === 'trend' && (
-        <div className="neu-card p-3">
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => {
-              const isSelected = selectedTagIds.has(tag.id)
-              const tagIdx = tags.filter((t) => selectedTagIds.has(t.id)).indexOf(tag)
-              return (
-                <button
-                  key={tag.id}
-                  onClick={() => toggleTag(tag.id)}
-                  className={`px-2.5 py-1 text-xs rounded-full border transition-all ${
-                    isSelected
-                      ? 'text-white border-transparent'
-                      : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'
-                  }`}
-                  style={isSelected ? { backgroundColor: SERIES_COLORS[tagIdx >= 0 ? tagIdx % SERIES_COLORS.length : 0] } : {}}
-                >
-                  {tag.display_name || tag.name}
-                  {tag.unit ? ` (${tag.unit})` : ''}
-                </button>
-              )
-            })}
-            {tags.length === 0 && (
-              <span className="text-xs text-gray-400 py-2">该节点下无数值型点位</span>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Trend Chart */}
       {viewMode === 'trend' && (
         selectedTagIds.size > 0 ? (
