@@ -87,3 +87,24 @@
 - 新增组件：`frontend/src/components/NodeEntityPanel.tsx`
 - commit: `066182e feat(nodes): integrate global entities into node management`
 - 已部署 2 号机，health 返回 `version: 0.4.30`
+
+## 本次补充（2026-08-05 全局实体批量绑定）
+
+### 批量绑定/解绑全局实体
+- 后端新增接口：
+  - GET /api/v1/entities/bindings — 按节点/实体查询绑定关系
+  - POST /api/v1/entities/bindings/batch — 批量创建绑定（自动跳过重复）
+  - DELETE /api/v1/entities/bindings/batch — 批量删除绑定
+- 前端 NodeEntityPanel 重构：
+  - 展示当前节点下所有实体-点位绑定关系（含实时值）
+  - 支持单条绑定、批量解绑
+  - 新增「批量绑定」弹窗，支持两种模式：
+    - 同名自动匹配：选择点位后自动匹配同名/同显示名的全局实体
+    - 手动多选绑定：多选实体与点位后按笛卡尔积批量创建绑定
+- 关键文件：
+  - backend/app/api/entities.py
+  - frontend/src/api/client.ts
+  - frontend/src/components/NodeEntityPanel.tsx
+- 版本：升级到 0.4.31
+- commit: cc29dd6 feat(entities): batch bind/unbind global entities per node
+- 本地构建通过；GitHub push 因当前网络中断失败，待网络恢复后重试
