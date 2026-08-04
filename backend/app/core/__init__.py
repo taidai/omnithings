@@ -1,1 +1,1 @@
-"""Omnithings core package."""
+"""ZiZu core package."""

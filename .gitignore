@@ -1,5 +1,5 @@
 # ============================================================
-# OmniThings .gitignore
+# ZiZu .gitignore
 # ============================================================
 
 # ---- Python ----
@@ -87,4 +87,4 @@ tmp/
 .workbuddy/
 .learnings/
 
-omnithings-v*.zip
+zizu-v*.zip
