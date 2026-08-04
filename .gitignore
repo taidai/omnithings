@@ -86,3 +86,5 @@ tmp/
 .claude/worktrees/
 .workbuddy/
 .learnings/
+
+omnithings-v*.zip
