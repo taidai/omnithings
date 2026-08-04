@@ -1,0 +1,67 @@
+# ============================================================
+# OmniThings - 生产部署 Override
+# 与 docker-compose.yml 叠加使用，适用于目标机器无法/不宜 build 镜像的场景。
+#
+# 目标：一份 docker-compose 命令完成部署，无需手动同步 app/ -> backend/app/
+#
+# 目录结构要求（由 CI/构建包提供）:
+#   /opt/omnithings/
+#     docker-compose.yml
+#     docker-compose.prod.yml
+#     .env
+#     app/                 # 后端代码 (原 backend/app)
+#     dist/                # 前端构建产物 (原 frontend/dist)
+#     VERSION
+#     init-db/
+#     config/
+#
+# 部署命令:
+#   # 1. 把构建包传到 3 号机并解压
+#   tar -xzf omnithings-vX.Y.Z-prod.tar.gz -C /opt/omnithings
+#   cd /opt/omnithings
+#
+#   # 2. 如使用预构建镜像，先加载镜像
+#   docker load -i omnithings-vX.Y.Z.tar
+#
+#   # 3. 启动（真正的一份 docker-compose）
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ============================================================
+
+services:
+  timescaledb:
+    network_mode: host
+    tmpfs:
+      - /dev/mqueue
+    ports: []
+
+  nanomq:
+    network_mode: host
+    tmpfs:
+      - /dev/mqueue
+    ports: []
+
+  backend:
+    image: omnithings:${VERSION:-latest}
+    container_name: omnithings
+    network_mode: host
+    tmpfs:
+      - /dev/mqueue
+    ports: []
+    env_file:
+      - .env
+    environment:
+      # host 网络下通过 127.0.0.1 直连同宿主服务
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      MQTT_HOST: 127.0.0.1
+      MQTT_PORT: 1883
+      FRONTEND_DIST: /app/frontend/dist
+    volumes:
+      # 生产包直接提供 app/ 和 dist/，无需再套 backend/、frontend/
+      - ./app:/app/app:ro
+      - ./dist:/app/frontend/dist:ro
+      - omnithings-data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
