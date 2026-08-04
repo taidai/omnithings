@@ -1,5 +1,5 @@
 -- ============================================================
--- OmniThings - t_node_snapshot 节点快照表 (数据黑板)
+-- ZiZu - t_node_snapshot 节点快照表 (数据黑板)
 -- 创建时间: 2026-07-29
 -- 说明: 按时间戳对齐的节点全量数据快照, 支持黑板模式查询
 -- ============================================================
@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_snapshot_node_ts ON t_node_snapshot(node_id, ts D
 CREATE INDEX IF NOT EXISTS idx_snapshot_data ON t_node_snapshot USING GIN(data);
 CREATE INDEX IF NOT EXISTS idx_snapshot_raw_data ON t_node_snapshot USING GIN(raw_data);
 
-COMMENT ON TABLE t_node_snapshot IS 'OmniThings 节点快照表 - 数据黑板: 每个时间戳记录节点全量点位值(JSONB)+原始报文(JSONB)';
+COMMENT ON TABLE t_node_snapshot IS 'ZiZu 节点快照表 - 数据黑板: 每个时间戳记录节点全量点位值(JSONB)+原始报文(JSONB)';
 COMMENT ON COLUMN t_node_snapshot.data IS '全量工程值快照 {tag_name: eng_value, ...}';
 COMMENT ON COLUMN t_node_snapshot.raw_data IS '全量原始值快照 {tag_name: raw_value, ...}';
 COMMENT ON COLUMN t_node_snapshot.raw_message IS '原始 MQTT 报文 (Neuron 推送的完整 payload)';

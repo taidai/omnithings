@@ -1,5 +1,5 @@
 """
-OmniThings Alarms API - 告警中心
+ZiZu Alarms API - 告警中心
 """
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 """
-OmniThings Tags API — 点位管理（含偏移校准）
+ZiZu Tags API — 点位管理（含偏移校准）
 
 GET    /api/v1/tags              → 分页查询点位列表（含原始值/工程值实时对照）
 GET    /api/v1/tags/{tag_id}     → 单个点位详情
@@ -349,7 +349,7 @@ async def export_tags_csv(
         ])
 
     output.seek(0)
-    filename = f"omnithings_tags_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"zizu_tags_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv; charset=utf-8-sig",
@@ -681,12 +681,12 @@ async def update_tag(tag_id: UUID, req: TagUpdateRequest) -> dict:
 
 class NeuronImportRequest(BaseModel):
     """从 Neuron 采集组批量导入点位到指定节点。"""
-    node_id: str = Field(..., description="OmniThings 目标节点 (Station/EnergyNode) UUID")
+    node_id: str = Field(..., description="ZiZu 目标节点 (Station/EnergyNode) UUID")
     neuron_node: str = Field(..., description="Neuron 南向节点名 (driver node)")
     neuron_group: str = Field(..., description="Neuron 采集组名")
 
 
-# Neuron data type code → OmniThings data_type
+# Neuron data type code → ZiZu data_type
 # 参考 Neuron: 3=INT16 4=UINT16 5=INT32 6=UINT32 9=FLOAT 10=DOUBLE 11=BIT ...
 # NOTE: data_type 必须为大写 (t_tags CHECK 约束: FLOAT/INT/BOOL/STRING/ENUM)
 _NEURON_TYPE_MAP = {

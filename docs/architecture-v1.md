@@ -1,4 +1,4 @@
-# OmniThings IoT Platform — 架构设计书 v1.1
+# ZiZu IoT Platform — 架构设计书 v1.1
 
 > 替代 ThingsBoard 的工业 IoT 开发平台
 > 核心能力：数据管道 + 自定义点位 + 节点树聚合 + 可视化规则引擎

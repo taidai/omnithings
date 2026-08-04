@@ -1,5 +1,5 @@
 """
-OmniThings Rule Templates API — 可配置规则模板
+ZiZu Rule Templates API — 可配置规则模板
 
 规则模板把业务逻辑（光储充调度、心跳测试等）从代码中抽离，
 存入数据库，用户可在前端选择模板后快速创建规则，

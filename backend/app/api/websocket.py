@@ -1,5 +1,5 @@
 """
-OmniThings WebSocket API — 实时遥测推送
+ZiZu WebSocket API — 实时遥测推送
 
 WS /api/v1/ws/telemetry
   - 客户端连接后可发送订阅指令: {"subscribe": ["tag_id_1", "tag_id_2"]}

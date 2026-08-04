@@ -1,5 +1,5 @@
 """
-OmniThings Rules API - 规则引擎管理
+ZiZu Rules API - 规则引擎管理
 
 规则以 GoRules JDM JSON 形式存储，支持 CRUD 与模拟测试。
 后端使用 zen-engine 对 JDM 决策图/决策表进行真实评估。

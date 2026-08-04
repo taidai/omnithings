@@ -1,1 +1,1 @@
-"""OmniThings models package."""
+"""ZiZu models package."""

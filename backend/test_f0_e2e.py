@@ -14,7 +14,7 @@ import psycopg2
 
 MQTT_HOST, MQTT_PORT = "127.0.0.1", 1883
 API = "http://127.0.0.1:9000/api/v1/health"
-DB_DSN = "host=127.0.0.1 port=5432 dbname=omnithings_iot user=omnithings password=omnidev_2026"
+DB_DSN = "host=127.0.0.1 port=5432 dbname=zizu_iot user=zizu password=omnidev_2026"
 
 PASS = FAIL = 0
 

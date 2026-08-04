@@ -1,5 +1,5 @@
 """
-OmniThings 全局配置管理
+ZiZu 全局配置管理
 
 基于 pydantic-settings，从环境变量 / .env 文件加载。
 所有可配置项集中在此，避免散落各处的 hardcode。
@@ -23,16 +23,16 @@ class Settings(BaseSettings):
     )
 
     # ---- 应用基础 ----
-    app_name: str = "OmniThings"
+    app_name: str = "ZiZu"
     debug: bool = False
     log_level: str = "INFO"
 
     # ---- 数据库 (TimescaleDB / PostgreSQL) ----
     db_host: str = "timescaledb"
     db_port: int = 5432
-    db_name: str = "omnithings"
-    db_user: str = "omnithings"
-    db_password: str = "omnithings_dev"
+    db_name: str = "zizu"
+    db_user: str = "zizu"
+    db_password: str = "zizu_dev"
     db_pool_min: int = 2
     db_pool_max: int = 10
 
@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     mqtt_port: int = 1883
     mqtt_username: str | None = None
     mqtt_password: str | None = None
-    mqtt_client_id: str = "omnithings-backend"
+    mqtt_client_id: str = "zizu-backend"
     mqtt_qos: int = 0  # QoS 0: at-most-once, broker 不缓存重发，降低内存堆积风险
     # 订阅的 topic 模式 — Neuron 上报 telemetry 使用此前缀
     # 支持逗号分隔的多 topic，例如 "telemetry/#,/neuron/MQTT"
@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
     # ---- JWT (M7 RPC 控制) ----
-    jwt_secret: str = "omnithings-dev-secret-change-in-production"
+    jwt_secret: str = "zizu-dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24h
 

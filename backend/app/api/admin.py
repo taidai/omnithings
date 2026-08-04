@@ -1,5 +1,5 @@
 """
-OmniThings Admin / Developer API — 开发者工具
+ZiZu Admin / Developer API — 开发者工具
 
 GET    /api/v1/pipeline/config      → 获取管道配置
 PUT    /api/v1/pipeline/config      → 更新入库节拍 (batch_size / flush_interval)

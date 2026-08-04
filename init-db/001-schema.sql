@@ -1,5 +1,5 @@
 -- ============================================================
--- OmniThings IoT Platform - 数据库 Schema 初始化脚本
+-- ZiZu IoT Platform - 数据库 Schema 初始化脚本
 -- 基于: g11-feature-domains.md v2.1 第9节
 -- 数据库: TimescaleDB (PostgreSQL 16+)
 -- 创建时间: 2026-07-17
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS t_nodes (
 CREATE INDEX IF NOT EXISTS idx_nodes_parent ON t_nodes(parent_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_layer ON t_nodes(layer);
 
-COMMENT ON TABLE t_nodes IS 'OmniThings 统一节点表 - 所有5层(Site/Station/EnergyNode/Device/Tag)共用';
+COMMENT ON TABLE t_nodes IS 'ZiZu 统一节点表 - 所有5层(Site/Station/EnergyNode/Device/Tag)共用';
 
 -- ══════════════════════════════════════
 --  2. t_tags: 点位表 (Physical + Logical 统一)
@@ -70,7 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_tags_node ON t_tags(node_id);
 CREATE INDEX IF NOT EXISTS idx_tags_type ON t_tags(tag_type);
 CREATE INDEX IF NOT EXISTS idx_tags_sources ON t_tags USING GIN(sources);
 
-COMMENT ON TABLE t_tags is 'OmniThings 点位表 - PhysicalTag(采集) + LogicalTag(公式/聚合) 统一存储';
+COMMENT ON TABLE t_tags is 'ZiZu 点位表 - PhysicalTag(采集) + LogicalTag(公式/聚合) 统一存储';
 COMMENT ON COLUMN t_tags.tag_type IS 'PHYSICAL=Neuron采集点位, LOGICAL=公式计算/聚合派生点位';
 
 -- ══════════════════════════════════════
@@ -93,7 +93,7 @@ SELECT create_hypertable('t_telemetry', 'ts', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS idx_tel_node_tag ON t_telemetry(node_id, tag_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idxtel_virtual ON t_telemetry(is_virtual) WHERE is_virtual = TRUE;
 
-COMMENT ON TABLE t_telemetry IS 'OmniThings 遥测主表 - 物理点位和虚拟点位共用, is_virtual 区分来源';
+COMMENT ON TABLE t_telemetry IS 'ZiZu 遥测主表 - 物理点位和虚拟点位共用, is_virtual 区分来源';
 COMMENT ON COLUMN t_telemetry.quality IS 'OPC UA Quality: 192=GOOD, 64=UNCERTAIN, 0=BAD';
 
 -- ═══ CAGG 连续聚合视图 (方案B Path B - 零Python代码) ═══
@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS t_telemetry_latest (
 CREATE INDEX IF NOT EXISTS idx_telemetry_latest_tag ON t_telemetry_latest(tag_id);
 CREATE INDEX IF NOT EXISTS idx_telemetry_latest_node ON t_telemetry_latest(node_id);
 
-COMMENT ON TABLE t_telemetry_latest IS 'OmniThings 遥测最新值缓存表 - 每个 tag 一行, 由 pipeline 同步维护';
+COMMENT ON TABLE t_telemetry_latest IS 'ZiZu 遥测最新值缓存表 - 每个 tag 一行, 由 pipeline 同步维护';
 
 -- ══════════════════════════════════════
 --  4. t_rules: 规则表 (F2 / GoRules)
@@ -177,7 +177,7 @@ CREATE TABLE IF NOT EXISTS t_rules (
     updated_at  TIMESTAMPTZ DEFAULT now()
 );
 
-COMMENT ON TABLE t_rules IS 'OmniThings 规则表 - GoRules JDM 决策表/决策图存储';
+COMMENT ON TABLE t_rules IS 'ZiZu 规则表 - GoRules JDM 决策表/决策图存储';
 
 -- ══════════════════════════════════════
 --  5. t_audit_log: 审计日志 (F2 / RPC 操作)
@@ -195,7 +195,7 @@ CREATE TABLE IF NOT EXISTS t_audit_log (
 );
 SELECT create_hypertable('t_audit_log', 'created_at', if_not_exists => TRUE);
 
-COMMENT ON TABLE t_audit_log IS 'OmniThings 审计日志 - RPC操作/规则变更/登录记录';
+COMMENT ON TABLE t_audit_log IS 'ZiZu 审计日志 - RPC操作/规则变更/登录记录';
 
 -- ══════════════════════════════════════
 --  6. t_alarms: 告警表 (F2 / GoRules 输出)
@@ -217,7 +217,7 @@ CREATE TABLE IF NOT EXISTS t_alarms (
 );
 CREATE INDEX IF NOT EXISTS idx_alarms_active ON t_alarms(level, acknowledged) WHERE resolved_at IS NULL;
 
-COMMENT ON TABLE t_alarms IS 'OmniThings 告警表 - GoRules 触发输出';
+COMMENT ON TABLE t_alarms IS 'ZiZu 告警表 - GoRules 触发输出';
 
 -- ══════════════════════════════════════
 --  7. t_users: 用户权限 (M0 基础)
@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS t_users (
     created_at  TIMESTAMPTZ DEFAULT now()
 );
 
-COMMENT ON TABLE t_users IS 'OmniThings 用户表 - 基础 RBAC: admin/operator/viewer';
+COMMENT ON TABLE t_users IS 'ZiZu 用户表 - 基础 RBAC: admin/operator/viewer';
 
 -- ============================================================
 -- 插入默认管理员用户 (密码: admin, 由应用层 bcrypt 加密)

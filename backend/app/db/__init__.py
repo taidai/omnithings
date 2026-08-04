@@ -1,1 +1,1 @@
-"""OmniThings database utilities package."""
+"""ZiZu database utilities package."""

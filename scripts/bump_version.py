@@ -1,5 +1,5 @@
 """
-OmniThings 版本号管理脚本。
+ZiZu 版本号管理脚本。
 
 用法：
     python scripts/bump_version.py           # 默认递增 patch

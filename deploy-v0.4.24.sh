@@ -1,14 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 TS=$(date +%Y%m%d_%H%M%S)
-BASE=/home/omnithings
+BASE=/home/zizu
 BAK=$BASE/bak
 mkdir -p $BAK
 cp -a $BASE/backend/app $BAK/backend-app-$TS
 cp -a $BASE/frontend/dist $BAK/frontend-dist-$TS
 cp $BASE/VERSION $BAK/VERSION-$TS
 echo "[deploy] backup done: $TS"
-unzip -o /tmp/omnithings-v0.4.24-update.zip -d $BASE
+unzip -o /tmp/zizu-v0.4.24-update.zip -d $BASE
 echo "[deploy] code extracted"
 cp $BASE/VERSION $BASE/backend/app/VERSION
 cd $BASE

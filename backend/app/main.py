@@ -1,5 +1,5 @@
 """
-OmniThings IoT Platform - FastAPI Application Entry Point
+ZiZu IoT Platform - FastAPI Application Entry Point
 Phase 1 S0-S5: 集成 F0 数据管道到应用生命周期
 """
 from __future__ import annotations
@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _pipeline, _scheduler
 
     # ---- Startup ----
-    logger.info("OmniThings IoT Platform starting up...")
+    logger.info("ZiZu IoT Platform starting up...")
 
     # Load runtime config from DB (overrides .env defaults)
     try:
@@ -166,7 +166,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # ---- Shutdown ----
-    logger.info("OmniThings IoT Platform shutting down...")
+    logger.info("ZiZu IoT Platform shutting down...")
     if _scheduler:
         _scheduler.shutdown(wait=False)
         logger.info("[Main] F3 aggregation scheduler stopped")
@@ -178,8 +178,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     """Application factory."""
     app = FastAPI(
-        title="OmniThings API",
-        description="OmniThings IoT Platform - 替代 ThingsBoard 的工业 IoT 开发平台",
+        title="ZiZu API",
+        description="ZiZu IoT Platform - 替代 ThingsBoard 的工业 IoT 开发平台",
         version=APP_VERSION,
         lifespan=lifespan,
         docs_url="/api/docs",

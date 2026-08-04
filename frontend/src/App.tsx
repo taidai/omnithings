@@ -77,7 +77,7 @@ export default function App() {
         <div className={`flex items-center ${collapsed ? 'mb-4 justify-center' : 'mb-6 px-2 pt-1 justify-between'}`}>
           {!collapsed && (
             <div>
-              <h1 className="text-lg font-bold text-gray-800">OmniThings</h1>
+              <h1 className="text-lg font-bold text-gray-800">ZiZu</h1>
               <p className="text-[10px] text-gray-400">工业 IoT 平台</p>
             </div>
           )}

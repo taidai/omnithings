@@ -1,4 +1,4 @@
-# OmniThings 工程交接包
+# ZiZu 工程交接包
 
 > 生成时间：2026-07-31
 > 用途：让另一款 AI 软件（如 Codex/Cursor/Claude Code）或人类开发者能直接接手当前工程。
@@ -7,7 +7,7 @@
 
 ## 1. 项目定位
 
-**OmniThings**（内部代号 Claw）是 OmniPower 工业物联网数据采集与入库平台。
+**ZiZu**（内部代号 Claw）是 OmniPower 工业物联网数据采集与入库平台。
 
 - 当前阶段：**F0 / F1 / F2 / F3 全部验收通过（验收脚本 14 passed, 0 failed），已接入 GoRules zen-engine，并已部署到 e606**
 - 核心目标：通过 Neuron 工业协议网关采集设备数据，经 NanoMQ 总线，由 FastAPI 后端解析、归一化、写入 TimescaleDB，并提供前端管理界面。
@@ -23,16 +23,16 @@ C:\Users\chent\Desktop\2026成果\easyway\Claw\
 ```
 
 ### GitHub 公开发布仓库（推荐用于外部 AI 接手）
-- 仓库地址：https://github.com/taidai/omnithings
+- 仓库地址：https://github.com/taidai/zizu
 - 发布暂存目录：
   ```
-  C:\Users\chent\Desktop\2026成果\omnithings-release\
+  C:\Users\chent\Desktop\2026成果\zizu-release\
   ```
-- 该目录是独立 git 仓库，remote 指向 GitHub `taidai/omnithings`。
-- 更新流程：在 `omnithings-release/` 内 `git add/commit/push origin main`。
+- 该目录是独立 git 仓库，remote 指向 GitHub `taidai/zizu`。
+- 更新流程：在 `zizu-release/` 内 `git add/commit/push origin main`。
 
 ### 重要：工作区不是独立 git 仓库
-`C:\Users\chent\Desktop\2026成果\easyway\Claw\` 自身没有 `.git`，它挂在父目录 `C:\Users\chent\Desktop\2026成果\.git` 下。**不要直接在 Claw 目录执行 git 操作**，应使用 `omnithings-release/` 作为发布仓库。
+`C:\Users\chent\Desktop\2026成果\easyway\Claw\` 自身没有 `.git`，它挂在父目录 `C:\Users\chent\Desktop\2026成果\.git` 下。**不要直接在 Claw 目录执行 git 操作**，应使用 `zizu-release/` 作为发布仓库。
 
 ---
 
@@ -124,7 +124,7 @@ Claw/
    - 必须叠加 `docker-compose.e606.yml`
    - 必须 `network_mode: host` + `tmpfs: /dev/mqueue`
    - 禁止在 e606 现场 `docker build`（裁剪内核缺 `CONFIG_VETH`/`CONFIG_POSIX_MQUEUE`）
-   - 当前 `omnithings:0.1.0` 是 commit 层，非 Dockerfile 重建，所以 `docker-compose.e606.yml` 设了 `backend.user: root`
+   - 当前 `zizu:0.1.0` 是 commit 层，非 Dockerfile 重建，所以 `docker-compose.e606.yml` 设了 `backend.user: root`
 
 ---
 
@@ -179,7 +179,7 @@ bash deploy.sh 0.1.0
 ```
 
 当前 deploy.sh 会：
-1. 同步代码到 `/home/omnithings`
+1. 同步代码到 `/home/zizu`
 2. 在 e606 用 `docker-compose.e606.yml` override 启动
 3. 不现场 build 镜像
 
@@ -208,7 +208,7 @@ curl -X POST http://e606.hlszh.com:9000/api/v1/tags/import-neuron \
   -d '{"node_id":"...","neuron_node":"tk_db","neuron_group":"data"}'
 
 # 聚合器日志
-docker logs omnithings --since 5m | grep -i aggregation
+docker logs zizu --since 5m | grep -i aggregation
 ```
 
 ---
@@ -227,7 +227,7 @@ docker logs omnithings --since 5m | grep -i aggregation
 
 e606 线上环境首页（http://e606.hlszh.com:9000/）：
 
-![OmniThings 首页](images/omnithings-home.png)
+![ZiZu 首页](images/zizu-home.png)
 
 规则引擎已集成 jdm-editor，支持简单表达式、决策表分级告警、多分支联合判断三种模板，并提供浅色/科技绿主题适配；告警中心展示来源节点、来源点位、触发值。
 

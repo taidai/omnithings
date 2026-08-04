@@ -1,4 +1,4 @@
-# OmniThings 迁移到 3 号新机部署总结
+# ZiZu 迁移到 3 号新机部署总结
 
 ## 一、2 号机部署踩坑总结
 
@@ -12,7 +12,7 @@
 - `dist/`（前端构建产物）
 - `VERSION`
 
-导致 unzip 后新代码躺在 `/home/omnithings/app/`、`/home/omnithings/dist/`，而容器实际跑的仍是 `/home/omnithings/backend/app/`、`/home/omnithings/frontend/dist/` 下的旧代码。
+导致 unzip 后新代码躺在 `/home/zizu/app/`、`/home/zizu/dist/`，而容器实际跑的仍是 `/home/zizu/backend/app/`、`/home/zizu/frontend/dist/` 下的旧代码。
 **结果：VERSION 更新了，界面/功能没变化。**
 
 ### 2. 修复方式（已验证）
@@ -26,7 +26,7 @@ docker compose -f docker-compose.yml -f docker-compose.host.yml up -d --force-re
 
 ### 3. 其他 2 号机踩坑点
 - **SSH 端口 3723 即目标端口**，登录账号 `holo`，sudo 需密码。
-- **/home/omnithings 目录权限为 root**，备份 `bak/` 需 `sudo`。
+- **/home/zizu 目录权限为 root**，备份 `bak/` 需 `sudo`。
 - **host 网络模式**：E606 内核无 `CONFIG_VETH`，bridge 网络残废。
 - **`tmpfs: - /dev/mqueue`**：内核无 `CONFIG_POSIX_MQUEUE`。
 - **内存限制**：backend 限制 1536M，避免 OOM。
@@ -38,8 +38,8 @@ docker compose -f docker-compose.yml -f docker-compose.host.yml up -d --force-re
 
 ### 方案 A：3 号机可 build（推荐，最干净）
 ```bash
-git clone https://github.com/taidai/omnithings.git /opt/omnithings
-cd /opt/omnithings
+git clone https://github.com/taidai/zizu.git /opt/zizu
+cd /opt/zizu
 cp .env.example .env
 # 根据 3 号机环境编辑 .env
 docker compose up -d --build
@@ -55,23 +55,23 @@ docker compose up -d --build
 cd frontend && npm run build && cd ..
 
 # 构建后端镜像（可选：在 x86 用 buildx 出 arm64）
-# docker buildx build --platform linux/arm64 -t omnithings:0.4.28 -f backend/Dockerfile . --load
+# docker buildx build --platform linux/arm64 -t zizu:0.4.28 -f backend/Dockerfile . --load
 
 # 打包生产部署包
-tar -czf omnithings-v0.4.28-prod.tar.gz \
+tar -czf zizu-v0.4.28-prod.tar.gz \
   docker-compose.yml docker-compose.prod.yml .env.example \
   backend/app frontend/dist VERSION init-db config
 
 # 导出镜像
-docker save omnithings:0.4.28 | gzip > omnithings-0.4.28.tar.gz
+docker save zizu:0.4.28 | gzip > zizu-0.4.28.tar.gz
 ```
 
 #### 2. 在 3 号机一键部署
 ```bash
-mkdir -p /opt/omnithings && cd /opt/omnithings
+mkdir -p /opt/zizu && cd /opt/zizu
 
 # 传上来的包结构应为：
-# /opt/omnithings/
+# /opt/zizu/
 #   docker-compose.yml
 #   docker-compose.prod.yml
 #   .env
@@ -82,7 +82,7 @@ mkdir -p /opt/omnithings && cd /opt/omnithings
 #   config/
 
 # 加载镜像（如果 3 号机不能 build）
-docker load -i omnithings-0.4.28.tar.gz
+docker load -i zizu-0.4.28.tar.gz
 
 # 真正的一份 docker-compose 启动
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
@@ -96,17 +96,17 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 如果 2 号机有生产数据需要保留，迁移步骤：
 1. 2 号机备份数据库：
    ```bash
-   docker exec omnithings-tsdb pg_dump -U omnithings -d omnithings_iot > omnithings_iot.sql
+   docker exec zizu-tsdb pg_dump -U zizu -d zizu_iot > zizu_iot.sql
    ```
 2. 3 号机启动空服务后恢复：
    ```bash
-   docker cp omnithings_iot.sql omnithings-tsdb:/tmp/
-   docker exec omnithings-tsdb psql -U omnithings -d omnithings_iot -f /tmp/omnithings_iot.sql
+   docker cp zizu_iot.sql zizu-tsdb:/tmp/
+   docker exec zizu-tsdb psql -U zizu -d zizu_iot -f /tmp/zizu_iot.sql
    ```
-3. 若有 `/app/data` 持久化数据，同步 `omnithings-data` volume 内容。
+3. 若有 `/app/data` 持久化数据，同步 `zizu-data` volume 内容。
 
 ## 四、验证清单
 - [ ] `docker compose ps` 三个服务均 healthy
 - [ ] `curl http://127.0.0.1:9000/api/v1/health` 返回正确 version
 - [ ] 浏览器访问前端，确认改动已生效
-- [ ] 检查容器内文件时间戳：`docker exec omnithings ls -la /app/frontend/dist/assets/`
+- [ ] 检查容器内文件时间戳：`docker exec zizu ls -la /app/frontend/dist/assets/`

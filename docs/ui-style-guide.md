@@ -1,7 +1,7 @@
-# OmniThings 界面风格规范
+# ZiZu 界面风格规范
 
 > 版本: v1.0 (2026-07-18 用户确认)
-> 适用: OmniThings 全部前端页面 (React/Vite + Tailwind; Reflex 项目同样适用)
+> 适用: ZiZu 全部前端页面 (React/Vite + Tailwind; Reflex 项目同样适用)
 
 ## 主题
 - 仅亮色主题 (light mode)，禁止深色背景

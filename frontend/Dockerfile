@@ -1,5 +1,5 @@
 # ============================================================
-# OmniThings Frontend - Multi-stage Docker Build
+# ZiZu Frontend - Multi-stage Docker Build
 # Stage 1: Node.js build
 # Stage 2: Nginx static serve
 # ============================================================

@@ -1,4 +1,4 @@
-# OmniThings 总目标拆解书
+# ZiZu 总目标拆解书
 
 > 从愿景到代码行的完整分解
 > 基于: architecture-v1.md + g4-module-decomposition + g5-difficulty-reduction + **g11-feature-domains.md (v2.1)**

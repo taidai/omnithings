@@ -1,11 +1,11 @@
 # ============================================================
-# OmniThings - 生产部署 Override
+# ZiZu - 生产部署 Override
 # 与 docker-compose.yml 叠加使用，适用于目标机器无法/不宜 build 镜像的场景。
 #
 # 目标：一份 docker-compose 命令完成部署，无需手动同步 app/ -> backend/app/
 #
 # 目录结构要求（由 CI/构建包提供）:
-#   /opt/omnithings/
+#   /opt/zizu/
 #     docker-compose.yml
 #     docker-compose.prod.yml
 #     .env
@@ -17,11 +17,11 @@
 #
 # 部署命令:
 #   # 1. 把构建包传到 3 号机并解压
-#   tar -xzf omnithings-vX.Y.Z-prod.tar.gz -C /opt/omnithings
-#   cd /opt/omnithings
+#   tar -xzf zizu-vX.Y.Z-prod.tar.gz -C /opt/zizu
+#   cd /opt/zizu
 #
 #   # 2. 如使用预构建镜像，先加载镜像
-#   docker load -i omnithings-vX.Y.Z.tar
+#   docker load -i zizu-vX.Y.Z.tar
 #
 #   # 3. 启动（真正的一份 docker-compose）
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
@@ -41,8 +41,8 @@ services:
     ports: []
 
   backend:
-    image: omnithings:${VERSION:-latest}
-    container_name: omnithings
+    image: zizu:${VERSION:-latest}
+    container_name: zizu
     network_mode: host
     tmpfs:
       - /dev/mqueue
@@ -60,7 +60,7 @@ services:
       # 生产包直接提供 app/ 和 dist/，无需再套 backend/、frontend/
       - ./app:/app/app:ro
       - ./dist:/app/frontend/dist:ro
-      - omnithings-data:/app/data
+      - zizu-data:/app/data
     deploy:
       resources:
         limits:

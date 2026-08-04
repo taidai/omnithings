@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# OmniThings CI/CD 部署脚本
+# ZiZu CI/CD 部署脚本
 #
 # 用法:
 #   bash deploy.sh [version]          # 默认 version=0.1.0
@@ -16,15 +16,15 @@ set -euo pipefail
 
 # ---- 配置 ----
 VERSION="${1:-0.1.0}"
-IMAGE_NAME="omnithings"
+IMAGE_NAME="zizu"
 IMAGE_TAG="${IMAGE_NAME}:${VERSION}-arm"
 TAR_FILE="${IMAGE_NAME}-${VERSION}-arm.tar.gz"
 
 SSH_HOST="root@e606.hlszh.com"
 SSH_PORT="13122"
 SSH_KEY="$HOME/.ssh/id_omnopower_deploy_nopass"
-REMOTE_DIR="/home/omnithings"
-CONTAINER_NAME="omnithings"
+REMOTE_DIR="/home/zizu"
+CONTAINER_NAME="zizu"
 APP_PORT="9000"
 
 # 颜色输出
@@ -123,18 +123,18 @@ deploy_on_server() {
     ssh -i "${SSH_KEY}" -p "${SSH_PORT}" "${SSH_HOST}" bash -s << 'DEPLOY_SCRIPT'
 set -euo pipefail
 
-REMOTE_DIR="/home/omnithings"
-TAR_FILE="$(ls /tmp/omnithings-*-arm.tar.gz 2>/dev/null | head -1)"
+REMOTE_DIR="/home/zizu"
+TAR_FILE="$(ls /tmp/zizu-*-arm.tar.gz 2>/dev/null | head -1)"
 IMAGE_TAG=$(basename "$TAR_FILE" .tar.gz)
 
 echo "[SERVER] Loading Docker image from $TAR_FILE ..."
 docker load < "$TAR_FILE"
 echo "[SERVER] Image loaded:"
-docker images | grep omnithings
+docker images | grep zizu
 
 echo "[SERVER] Stopping old container (if running)..."
-docker stop omnithings 2>/dev/null || true
-docker rm omnithings 2>/dev/null || true
+docker stop zizu 2>/dev/null || true
+docker rm zizu 2>/dev/null || true
 
 echo "[SERVER] Starting new container..."
 cd "$REMOTE_DIR"
@@ -145,20 +145,20 @@ echo "[SERVER] Waiting for health check..."
 sleep 5
 
 echo "[SERVER] Container status:"
-docker ps | grep omnithings
+docker ps | grep zizu
 
 echo "[SERVER] Health check:"
 curl -sf "http://127.0.0.1:9000/api/v1/health" | python3 -m json.tool 2>/dev/null || \
     echo "[SERVER] Waiting more..." && sleep 5 && curl -sf "http://127.0.0.1:9000/api/v1/health" || \
-    echo "[WARN] Health check not yet ready (check logs with: docker logs omnithings)"
+    echo "[WARN] Health check not yet ready (check logs with: docker logs zizu)"
 
 echo "[SERVER] Recent logs:"
-docker logs omnithings 2>&1 | tail -20
+docker logs zizu 2>&1 | tail -20
 
 DEPLOY_SCRIPT
 
     log_ok "Deployed! Access: http://e606.hlszh.com:${APP_PORT}/api/v1/health"
-    log_info "View logs: ssh ... \"docker logs -f omnithings\""
+    log_info "View logs: ssh ... \"docker logs -f zizu\""
 }
 
 # ============================================================
@@ -170,9 +170,9 @@ init_db() {
     ssh -i "${SSH_KEY}" -p "${SSH_PORT}" "${SSH_HOST}" bash -s << 'INIT_SCRIPT'
 set -euo pipefail
 
-DB_USER="omnithings"
-DB_PASS="omnithings_dev_2026"
-DB_NAME="omnithings"
+DB_USER="zizu"
+DB_PASS="zizu_dev_2026"
+DB_NAME="zizu"
 
 echo "[DB] Creating database and user ..."
 sudo -u postgres psql <<SQL
@@ -191,7 +191,7 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 SQL
 
 echo "[DB] Importing schema ..."
-sudo -u postgres psql -d ${DB_NAME} < /home/omnithings/init-db/001-schema.sql
+sudo -u postgres psql -d ${DB_NAME} < /home/zizu/init-db/001-schema.sql
 
 echo "[DB] Verifying tables ..."
 sudo -u postgres psql -d ${DB_NAME} -c "\dt"
@@ -199,7 +199,7 @@ sudo -u postgres psql -d ${DB_NAME} -c "SELECT extname FROM pg_extension WHERE e
 
 INIT_SCRIPT
 
-    log_ok "Database initialized: omnithings"
+    log_ok "Database initialized: zizu"
 }
 
 # ============================================================
@@ -208,7 +208,7 @@ INIT_SCRIPT
 main() {
     echo ""
     echo "========================================="
-    echo "  OmniThings CI/CD Deploy v${VERSION}"
+    echo "  ZiZu CI/CD Deploy v${VERSION}"
     echo "  Target: ${SSH_HOST}"
     echo "========================================="
     echo ""
@@ -241,7 +241,7 @@ main() {
             echo ""
             echo "  API:     http://e606.hlszh.com:${APP_PORT}/api/docs"
             echo "  Health:  http://e606.hlszh.com:${APP_PORT}/api/v1/health"
-            echo "  Logs:    ssh -i ${SSH_KEY} -p ${SSH_PORT} ${SSH_HOST} \"docker logs -f omnithings\""
+            echo "  Logs:    ssh -i ${SSH_KEY} -p ${SSH_PORT} ${SSH_HOST} \"docker logs -f zizu\""
             echo ""
             ;;
     esac

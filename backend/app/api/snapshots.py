@@ -1,5 +1,5 @@
 """
-OmniThings Snapshot API — 节点快照查询（数据黑板）
+ZiZu Snapshot API — 节点快照查询（数据黑板）
 
 GET    /api/v1/snapshots              → 分页查询节点快照
 GET    /api/v1/snapshots/{node_id}/latest → 获取节点最新快照
@@ -188,7 +188,7 @@ async def export_snapshots_csv(
         ])
 
     output.seek(0)
-    filename = f"omnithings_snapshots_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"zizu_snapshots_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv; charset=utf-8-sig",

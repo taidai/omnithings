@@ -1,12 +1,12 @@
-# OmniThings 会话交接
+# ZiZu 会话交接
 
 ## 当前状态
 
 - 本地版本：**0.4.23**（commit `647e5ba`）
-- GitHub：`main` 已推送至 `https://github.com/taidai/omnithings.git`
+- GitHub：`main` 已推送至 `https://github.com/taidai/zizu.git`
 - 2 号机部署：`e606.hlszh.com:3723`（SSH 端口 3723，账号 `holo` / `holo123`）
   - Web：`http://e606.hlszh.com:3723`（实际服务端口 `9000`，FRP 转发）
-  - 容器：`omnithings` 已重建，health 返回 `version: 0.4.23`
+  - 容器：`zizu` 已重建，health 返回 `version: 0.4.23`
   - MQTT：已连接，订阅 `/neuron/#`
 
 ## 本次完成
@@ -14,20 +14,20 @@
 ### 1. 修复「打不开，加载不出来」
 - **根因**：`AdminPanel` 中的 `DataBrowser` 组件在挂载时无条件自动查询 `t_telemetry` 全表最近 1 小时数据（无节点/点位过滤），数据量大时请求耗时过长，导致页面假死/白屏。
 - **修复**：移除 `DataBrowser` 的自动加载 `useEffect`，改为仅在用户点击「刷新」或切换筛选条件后手动查询。
-- **文件**：[`frontend/src/components/DataBrowser.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/components/DataBrowser.tsx)
+- **文件**：[`frontend/src/components/DataBrowser.tsx`](/C:/Users/chent/Documents/zizu-explore/frontend/src/components/DataBrowser.tsx)
 
 ### 2. 左侧导航「节点树」改为「节点管理」并优化图标/布局
-- **修改**：[`frontend/src/App.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/App.tsx)
+- **修改**：[`frontend/src/App.tsx`](/C:/Users/chent/Documents/zizu-explore/frontend/src/App.tsx)
   - 侧边栏菜单「节点树」更名为「节点管理」；
   - 引入 `lucide-react` 的 `Network / Scale / Bell / Settings` 图标替换原有 Unicode 符号；
   - 导航按钮调整为更大的圆角（`rounded-xl`）、更大的字号（`text-sm`）和更宽松的间距（`py-2.5`）；
   - 图标添加 `shrink-0`，文字添加 `truncate`，避免收起/展开时布局抖动。
-- 同步将 [`frontend/src/pages/NodeTreePage.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/pages/NodeTreePage.tsx) 左侧面板标题改为「节点管理」。
+- 同步将 [`frontend/src/pages/NodeTreePage.tsx`](/C:/Users/chent/Documents/zizu-explore/frontend/src/pages/NodeTreePage.tsx) 左侧面板标题改为「节点管理」。
 
 ### 3. AdminPanel 增加 MQTT 北向主题配置界面
 - **问题**：后端 `/api/v1/mqtt-config` 与 `config_store.py` 已具备运行时重订阅能力，但 `AdminPanel.tsx` 只引入了接口、没有表单，用户无法在界面上配置 Neuron MQTT 主题。
 - **修复**：在 `AdminPanel` 中新增「MQTT 北向主题配置」卡片：输入框编辑订阅主题、显示生效主题、保存后后端立即重订阅。
-- **文件**：[`frontend/src/components/AdminPanel.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/components/AdminPanel.tsx)
+- **文件**：[`frontend/src/components/AdminPanel.tsx`](/C:/Users/chent/Documents/zizu-explore/frontend/src/components/AdminPanel.tsx)
 
 ### 4. 版本升级到 0.4.23
 - 使用 `python scripts/bump_version.py patch` 同步更新 `VERSION`、`backend/app/VERSION`、`frontend/package.json`、`backend/pyproject.toml`。
@@ -36,27 +36,27 @@
 ### 5. 部署到 2 号机并推送到 GitHub
 - 本地 `npm run build` 通过。
 - 打包 `frontend/dist`、`VERSION` 为 zip，通过 `pscp` 上传到 `/tmp`。
-- 远程解压并更新 `/home/omnithings/frontend/dist` 与 `/home/omnithings/VERSION`，同步 `/home/omnithings/backend/app/VERSION`。
+- 远程解压并更新 `/home/zizu/frontend/dist` 与 `/home/zizu/VERSION`，同步 `/home/zizu/backend/app/VERSION`。
 - `docker compose -f docker-compose.yml -f docker-compose.host.yml up -d --force-recreate backend` 重建后端容器。
 - Health 检查通过，返回 `version: 0.4.23`。
 - `git push origin main` 成功。
 
 ## 已知问题 / 注意
 
-1. **Docker 镜像标签仍为 `omnithings:0.4.12`**：当前通过 volume 挂载最新代码运行，功能已生效；后续如需镜像标签一致，需要重新 build 并 tag 为 `0.4.23`。
+1. **Docker 镜像标签仍为 `zizu:0.4.12`**：当前通过 volume 挂载最新代码运行，功能已生效；后续如需镜像标签一致，需要重新 build 并 tag 为 `0.4.23`。
 2. **容器日志出现 `skipped: maximum number of running instances reached`**：F1/F2/F3 定时任务执行耗时较长导致 APScheduler 跳过重叠实例，目前不影响实时数据流，但需后续优化调度间隔或任务性能。
 3. **部署脚本待整理**：建议后续把 2 号机部署流程固化到 `scripts/deploy-2.ps1` 或 `deploy2.sh`，避免路径/权限问题。
 
 ## 关键文件
 
-- [`frontend/src/components/DataBrowser.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/components/DataBrowser.tsx)
-- [`frontend/src/App.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/App.tsx)
-- [`frontend/src/pages/NodeTreePage.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/pages/NodeTreePage.tsx)
-- [`frontend/src/components/AdminPanel.tsx`](/C:/Users/chent/Documents/omnithings-explore/frontend/src/components/AdminPanel.tsx)
-- [`backend/app/api/admin.py`](/C:/Users/chent/Documents/omnithings-explore/backend/app/api/admin.py)
-- [`backend/app/services/config_store.py`](/C:/Users/chent/Documents/omnithings-explore/backend/app/services/config_store.py)
-- [`backend/app/services/mqtt_client.py`](/C:/Users/chent/Documents/omnithings-explore/backend/app/services/mqtt_client.py)
-- [`backend/app/services/pipeline.py`](/C:/Users/chent/Documents/omnithings-explore/backend/app/services/pipeline.py)
+- [`frontend/src/components/DataBrowser.tsx`](/C:/Users/chent/Documents/zizu-explore/frontend/src/components/DataBrowser.tsx)
+- [`frontend/src/App.tsx`](/C:/Users/chent/Documents/zizu-explore/frontend/src/App.tsx)
+- [`frontend/src/pages/NodeTreePage.tsx`](/C:/Users/chent/Documents/zizu-explore/frontend/src/pages/NodeTreePage.tsx)
+- [`frontend/src/components/AdminPanel.tsx`](/C:/Users/chent/Documents/zizu-explore/frontend/src/components/AdminPanel.tsx)
+- [`backend/app/api/admin.py`](/C:/Users/chent/Documents/zizu-explore/backend/app/api/admin.py)
+- [`backend/app/services/config_store.py`](/C:/Users/chent/Documents/zizu-explore/backend/app/services/config_store.py)
+- [`backend/app/services/mqtt_client.py`](/C:/Users/chent/Documents/zizu-explore/backend/app/services/mqtt_client.py)
+- [`backend/app/services/pipeline.py`](/C:/Users/chent/Documents/zizu-explore/backend/app/services/pipeline.py)
 
 ## 下一步建议
 

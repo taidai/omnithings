@@ -1,9 +1,9 @@
 import json, os, time, urllib.request, urllib.error, paho.mqtt.client as mqtt, psycopg2
 
-API = os.environ.get('OMNITHINGS_API', 'http://127.0.0.1:9000/api/v1')
-DB_DSN = os.environ.get('OMNITHINGS_DSN', 'host=127.0.0.1 port=5432 dbname=omnithings user=omnithings password=omnidev_2026')
-MQTT_HOST = os.environ.get('OMNITHINGS_MQTT', '127.0.0.1')
-MQTT_PORT = int(os.environ.get('OMNITHINGS_MQTT_PORT', '1883'))
+API = os.environ.get('ZIZU_API', 'http://127.0.0.1:9000/api/v1')
+DB_DSN = os.environ.get('ZIZU_DSN', 'host=127.0.0.1 port=5432 dbname=zizu user=zizu password=omnidev_2026')
+MQTT_HOST = os.environ.get('ZIZU_MQTT', '127.0.0.1')
+MQTT_PORT = int(os.environ.get('ZIZU_MQTT_PORT', '1883'))
 AGG_POLL_INTERVAL = 2
 AGG_POLL_MAX = 30
 
@@ -53,7 +53,7 @@ def db(query, params=None):
     return rows
 
 print('='*60)
-print('OmniThings F0 + F1 + F2 + F3 Acceptance on e606')
+print('ZiZu F0 + F1 + F2 + F3 Acceptance on e606')
 print('='*60)
 
 # ---------- F0: Health + pipeline metrics ----------

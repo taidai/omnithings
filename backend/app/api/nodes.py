@@ -1,5 +1,5 @@
 """
-OmniThings Nodes API — 节点树全生命周期管理
+ZiZu Nodes API — 节点树全生命周期管理
 
 GET    /api/v1/nodes            -> 节点列表（含 tag 数量统计）
 POST   /api/v1/nodes            -> 创建节点

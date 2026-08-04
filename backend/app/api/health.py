@@ -1,5 +1,5 @@
 """
-OmniThings Health Check API
+ZiZu Health Check API
 
 GET /api/v1/health → 全组件状态 + F0 Pipeline Metrics
 GET /api/v1/health/ready → K8s readiness probe
@@ -50,7 +50,7 @@ def get_pipeline():
 @router.get("/health")
 async def health_check() -> dict:
     """
-    OmniThings 健康检查 — 包含 F0 Pipeline Metrics。
+    ZiZu 健康检查 — 包含 F0 Pipeline Metrics。
 
     Returns:
         {

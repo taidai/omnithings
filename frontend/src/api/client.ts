@@ -1,5 +1,5 @@
 /**
- * OmniThings API Client
+ * ZiZu API Client
  * 封装后端 REST + WebSocket 调用
  */
 

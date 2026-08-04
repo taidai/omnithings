@@ -1,5 +1,5 @@
 """
-OmniThings Node Category API — 节点大类管理
+ZiZu Node Category API — 节点大类管理
 
 GET    /api/v1/categories              → 大类列表
 POST   /api/v1/categories              → 创建大类

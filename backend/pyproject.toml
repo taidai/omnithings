@@ -1,12 +1,12 @@
 # ============================================================
-# OmniThings Backend - Python 项目配置
+# ZiZu Backend - Python 项目配置
 # uv / pip 可直接使用
 # ============================================================
 
 [project]
-name = "omnithings-backend"
+name = "zizu-backend"
 version = "0.4.30"
-description = "OmniThings IoT Platform - 替代 ThingsBoard 的工业 IoT 开发平台"
+description = "ZiZu IoT Platform - 替代 ThingsBoard 的工业 IoT 开发平台"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

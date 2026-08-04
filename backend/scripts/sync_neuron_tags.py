@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-sync_neuron_tags.py — Neuron API → OmniThings t_nodes/t_tags 自动同步
+sync_neuron_tags.py — Neuron API → ZiZu t_nodes/t_tags 自动同步
 
 从 Neuron REST API 拉取 DRIVER 节点的 group/tag 配置，
-生成 OmniThings 节点树 + 点位映射（幂等, 可重复执行）。
+生成 ZiZu 节点树 + 点位映射（幂等, 可重复执行）。
 
 用法 (服务器上):
-    python3 /home/omnithings/backend/scripts/sync_neuron_tags.py
-    python3 /home/omnithings/backend/scripts/sync_neuron_tags.py --dry-run
+    python3 /home/zizu/backend/scripts/sync_neuron_tags.py
+    python3 /home/zizu/backend/scripts/sync_neuron_tags.py --dry-run
 
-类型映射 (Neuron type → OmniThings data_type):
+类型映射 (Neuron type → ZiZu data_type):
     1-8 整数系 → INT | 9/10 浮点 → FLOAT | 11/12 → BOOL | 13/14 → STRING
 
 缩放策略 (关键!):
@@ -29,9 +29,9 @@ NEURON = "http://127.0.0.1:7000/api/v2"
 NEURON_USER = "admin"
 NEURON_PASS = "0000"
 
-DB_DSN = "host=127.0.0.1 port=5432 dbname=omnithings user=omnithings password=omnidev_2026"
+DB_DSN = "host=127.0.0.1 port=5432 dbname=zizu user=zizu password=omnidev_2026"
 
-# Neuron type code → OmniThings data_type
+# Neuron type code → ZiZu data_type
 TYPE_MAP = {
     1: "INT", 2: "INT", 3: "INT", 4: "INT",   # INT8/UINT8/INT16/UINT16
     5: "INT", 6: "INT", 7: "INT", 8: "INT",   # INT32/UINT32/INT64/UINT64
@@ -80,7 +80,7 @@ def main() -> None:
     args = ap.parse_args()
 
     print("=" * 60)
-    print("Neuron → OmniThings tag 同步")
+    print("Neuron → ZiZu tag 同步")
     print("=" * 60)
 
     token = login()
@@ -188,7 +188,7 @@ def main() -> None:
         print("[4/4] DRY-RUN 结束 (未写入)")
 
     print("=" * 60)
-    print("完成. 重启 backend 重载规则: docker restart omnithings")
+    print("完成. 重启 backend 重载规则: docker restart zizu")
     print("=" * 60)
 
 

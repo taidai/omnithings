@@ -1,4 +1,4 @@
-# OmniThings — e606.hlszh.com 部署指南
+# ZiZu — e606.hlszh.com 部署指南
 
 > **服务器**: e606.hlszh.com:13122 (SSH, ARM64)
 > **系统**: Ubuntu 20.04 LTS aarch64
@@ -13,11 +13,11 @@
 e606.hlszh.com (ARM64 Ubuntu)
 ├── Neuron 2.10.4      ← 原生进程 :7000  (PCS/BMS 不变!)
 ├── NanoMQ             ← Docker    :1883  (已有, 不变)
-├── PostgreSQL 17       ← 原生     :5432  (已有, 新建 DB=omnithings)
+├── PostgreSQL 17       ← 原生     :5432  (已有, 新建 DB=zizu)
 ├── TimescaleDB 2.19   ← PG 扩展          (已装在 PG17 上)
 ├── Reflex (OmniPower) ← Docker    :8000  (旧系统, 不动)
 ├── NocoBase           ← 外部     :2160  (不动)
-└── ★ OmniThings        ← Docker    :9000  (新部署! F0 数据管道)
+└── ★ ZiZu        ← Docker    :9000  (新部署! F0 数据管道)
 ```
 
 **关键原则**: PCS/BMS 设备配置不变，Neuron 不动，NanoMQ 复用，PG 复用(新库)。
@@ -76,12 +76,12 @@ bash deploy.sh 0.1.0
 
 输出预期：
 ```
-[DEPLOY] Building omnithings:0.1.0-arm for linux/arm64 ...
-[✓] Image built: omnithings:0.1.0-arm (280MB)
+[DEPLOY] Building zizu:0.1.0-arm for linux/arm64 ...
+[✓] Image built: zizu:0.1.0-arm (280MB)
 [DEPLOY] Pushing to root@e606.hlszh.com ...
-[✓] Files pushed to /home/omnithings
-[SERVER] Loading Docker image from /tmp/omnithings-0.1.0-arm.tar.gz ...
-[SERVER] Container status: omnithings Up 5 seconds
+[✓] Files pushed to /home/zizu
+[SERVER] Loading Docker image from /tmp/zizu-0.1.0-arm.tar.gz ...
+[SERVER] Container status: zizu Up 5 seconds
 [SERVER] Health check: {"status":"ok",...}
 ========== DEPLOY COMPLETE ==========
 ```
@@ -104,12 +104,12 @@ docker buildx inspect --bootstrap
 # 构建
 docker buildx build \
     --platform linux/arm64 \
-    -t omnithings:0.1.0-arm \
+    -t zizu:0.1.0-arm \
     ./backend \
     --load
 
 # 导出
-docker save omnithings:0.1.0-arm | gzip > omnithings-0.1.0-arm.tar.gz
+docker save zizu:0.1.0-arm | gzip > zizu-0.1.0-arm.tar.gz
 ```
 
 #### Step 2: 传输到服务器
@@ -117,7 +117,7 @@ docker save omnithings:0.1.0-arm | gzip > omnithings-0.1.0-arm.tar.gz
 ```bash
 # 传输镜像
 scp -i ~/.ssh/id_omnopower_deploy_nopass -P 13122 \
-    omnithings-0.1.0-arm.tar.gz \
+    zizu-0.1.0-arm.tar.gz \
     root@e606.hlszh.com:/tmp/
 
 # 传输代码 (tar+ssh 管道)
@@ -127,7 +127,7 @@ tar czf - \
     --exclude='*.pyc' --exclude='.git' --exclude='.workbuddy' \
     backend/ init-db/ docker-compose.yml .env.e606 | \
 ssh -i ~/.ssh/id_omnopower_deploy_nopass -P 13122 \
-    root@e606.hlszh.com "mkdir -p /home/omnithings && cd /home/omnithings && tar xzf -"
+    root@e606.hlszh.com "mkdir -p /home/zizu && cd /home/zizu && tar xzf -"
 ```
 
 #### Step 3: 服务器端操作
@@ -137,20 +137,20 @@ ssh -i ~/.ssh/id_omnopower_deploy_nopass -P 13122 \
 ssh -i ~/.ssh/id_omnopower_deploy_nopass root@e606.hlszh.com -p 13122
 
 # 加载镜像
-docker load < /tmp/omnithings-0.1.0-arm.tar.gz
+docker load < /tmp/zizu-0.1.0-arm.tar.gz
 
 # 准备环境变量
-cd /home/omnithings
+cd /home/zizu
 cp .env.e606 .env   # 首次; 之后 .env 会保留修改
 
 # 初始化数据库 (首次)
 sudo -u postgres psql <<'SQL'
-CREATE USER omnithings WITH PASSWORD 'omnithings_dev_2026';
-CREATE DATABASE omnithings OWNER omnithings;
-\c omnithings
+CREATE USER zizu WITH PASSWORD 'zizu_dev_2026';
+CREATE DATABASE zizu OWNER zizu;
+\c zizu
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 SQL
-sudo -u postgres psql -d omnithings < init-db/001-schema.sql
+sudo -u postgres psql -d zizu < init-db/001-schema.sql
 
 # 启动容器
 docker compose up -d backend
@@ -166,11 +166,11 @@ docker compose up -d backend
 # 单文件推送
 scp -i ~/.ssh/id_omnopower_deploy_nopass -P 13122 \
     backend/app/services/pipeline.py \
-    root@e606.hlszh.com:/home/omnithings/backend/app/services/pipeline.py
+    root@e606.hlszh.com:/home/zizu/backend/app/services/pipeline.py
 
 # 重启容器 (代码通过 volume mount 热加载, 但有时需重启)
 ssh -i ~/.ssh/id_omnopower_deploy_nopass -p 13122 \
-    root@e606.hlszh.com "docker restart omnithings"
+    root@e606.hlszh.com "docker restart zizu"
 ```
 
 ### 3.2 全量重新部署 (依赖变了或重构了)
@@ -185,8 +185,8 @@ bash deploy.sh 0.1.1
 
 ```bash
 # ===== 4.1 容器状态 =====
-docker ps | grep omnithings
-# 预期: omnithings ... Up ... 0.0.0.0:9000->9000/tcp
+docker ps | grep zizu
+# 预期: zizu ... Up ... 0.0.0.0:9000->9000/tcp
 
 # ===== 4.2 Health API =====
 curl http://127.0.0.1:9000/api/v1/health | python3 -m json.tool
@@ -210,14 +210,14 @@ curl http://127.0.0.1:9000/api/docs
 # 预期: FastAPI Swagger UI HTML
 
 # ===== 4.4 MQTT 消费验证 =====
-# 查看 OmniThings 是否收到 Neuron 数据
-docker logs omnithings 2>&1 | grep -E "(MQTT|telemetry|Pipeline)" | tail -20
+# 查看 ZiZu 是否收到 Neuron 数据
+docker logs zizu 2>&1 | grep -E "(MQTT|telemetry|Pipeline)" | tail -20
 # 预期:
 # [MQTT] Connected ✅
 # [Pipeline] messages_parsed_ok=56, points_written_db=52
 
 # ===== 4.5 数据入库验证 =====
-sudo -u postgres psql -d omnithings -c "
+sudo -u postgres psql -d zizu -c "
     SELECT COUNT(*) as total_rows,
            MAX(ts) as latest_ts
     FROM t_telemetry;"
@@ -236,43 +236,43 @@ http://e606.hlszh.com:9000/api/docs
 
 ```bash
 # 实时跟踪
-docker logs -f omnithings
+docker logs -f zizu
 
 # 最近 50 行
-docker logs --tail 50 omnithings 2>&1
+docker logs --tail 50 zizu 2>&1
 
 # 只看错误
-docker logs omnithings 2>&1 | grep -i error | tail -20
+docker logs zizu 2>&1 | grep -i error | tail -20
 ```
 
 ### 5.2 常见问题
 
 | 症状 | 排查命令 | 解决方案 |
 |------|---------|---------|
-| Health 显示 `mqtt: disconnected` | `docker logs omnithings \| grep MQTT` | 检查 NanoMQ: `docker ps \| grep nanomq` |
-| Health 显示 `tsdb: disconnected` | `docker logs omnithings \| grep TSDB` | 检查 PG: `systemctl status postgresql`, 确认 DB 存在 |
-| `messages_parse_error` 递增 | `docker logs omnithings \| grep parse` | 检查 Neuron topic 格式是否匹配 |
-| 容器不停重启 | `docker logs omnithings 2>&1 \| tail -30` | 语法错误或缺少依赖 |
+| Health 显示 `mqtt: disconnected` | `docker logs zizu \| grep MQTT` | 检查 NanoMQ: `docker ps \| grep nanomq` |
+| Health 显示 `tsdb: disconnected` | `docker logs zizu \| grep TSDB` | 检查 PG: `systemctl status postgresql`, 确认 DB 存在 |
+| `messages_parse_error` 递增 | `docker logs zizu \| grep parse` | 检查 Neuron topic 格式是否匹配 |
+| 容器不停重启 | `docker logs zizu 2>&1 \| tail -30` | 语法错误或缺少依赖 |
 | `port already in use` | `ss -tlnp \| grep 9000` | 改 `.env` 中 `APP_PORT` |
 
 ### 5.3 重置 (从头来)
 
 ```bash
 # 停止并删除容器
-docker stop omnithings && docker rm omnithings
+docker stop zizu && docker rm zizu
 
 # 清空数据 (可选, 谨慎!)
-sudo -u postgres psql -d omnithings -c "TRUNCATE t_telemetry CASCADE;"
+sudo -u postgres psql -d zizu -c "TRUNCATE t_telemetry CASCADE;"
 
 # 重新启动
-cd /home/omnithings && docker compose up -d backend
+cd /home/zizu && docker compose up -d backend
 ```
 
 ---
 
 ## 6. Neuron 对接配置
 
-OmniThings 的 MQTT 订阅需要和 Neuron 的推送配置对齐：
+ZiZu 的 MQTT 订阅需要和 Neuron 的推送配置对齐：
 
 ### 6.1 Neuron 端 (Web UI: e606.hlszh.com:7000)
 
@@ -289,7 +289,7 @@ Topic 格式: neuron/{node_name}/telemetry
 
 **不要改动这些!** PCS/BMS 配置保持原样。
 
-### 6.2 OmniThings 端 (.env 配置)
+### 6.2 ZiZu 端 (.env 配置)
 
 ```env
 MQTT_TELEMETRY_TOPIC=neuron/+/telemetry   # 匹配 Neuron 推送格式
@@ -309,7 +309,7 @@ MQTT_TELEMETRY_TOPIC=neuron/+/telemetry   # 匹配 Neuron 推送格式
 
 | 服务 | 绑定地址 | 公网暴露 |
 |------|---------|---------|
-| OmniThings API | `0.0.0.0:9000` | ✅ 是 (有防火墙则受限) |
+| ZiZu API | `0.0.0.0:9000` | ✅ 是 (有防火墙则受限) |
 | NanoMQ MQTT | `0.0.0.0:1883` | ⚠️ 已有 (建议防火墙限制) |
 | Neuron UI | `0.0.0.0:7000` | ✅ 已有 |
 | PostgreSQL | `127.0.0.1:5432` | ❌ 仅本地 (安全) |
@@ -322,10 +322,10 @@ MQTT_TELEMETRY_TOPIC=neuron/+/telemetry   # 匹配 Neuron 推送格式
 
 ---
 
-## 8. 文件清单 (服务器上 `/home/omnithings/`)
+## 8. 文件清单 (服务器上 `/home/zizu/`)
 
 ```
-/home/omnithings/
+/home/zizu/
 ├── .env                    # 运行环境变量 (从 .env.e606 复制)
 ├── .env.e606               # e606 专用模板
 ├── docker-compose.yml      # 编排文件 (仅 backend 服务)

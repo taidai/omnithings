@@ -1,4 +1,4 @@
-# OmniThings
+# ZiZu
 
 > 自足物联网平台 · 开源工业 IoT 低代码平台
 >
@@ -12,7 +12,7 @@
 
 ## 这是什么
 
-OmniThings 是一套面向**光储充 EMS、工业能耗监测、设备远程控制**场景的物联网平台。核心理念是「**配置即平台**」——所有业务逻辑通过界面配置产生，不写死代码。
+ZiZu 是一套面向**光储充 EMS、工业能耗监测、设备远程控制**场景的物联网平台。核心理念是「**配置即平台**」——所有业务逻辑通过界面配置产生，不写死代码。
 
 它把工业 IoT 的四件套（设备接入 / 数据管道 / 点位计算 / 控制规则）整合成一条可插拔的管道：
 
@@ -31,7 +31,7 @@ OmniThings 是一套面向**光储充 EMS、工业能耗监测、设备远程控
 
 ## 功能域分层
 
-OmniThings 的能力被切成五个功能域，**渐进交付**：
+ZiZu 的能力被切成五个功能域，**渐进交付**：
 
 | 域 | 一句话 | 核心能力 | 用户价值 |
 |----|--------|---------|---------|
@@ -94,7 +94,7 @@ Site (场站)
 
 ### 实现效果图
 
-![OmniThings 首页](docs/images/omnithings-home.png)
+![ZiZu 首页](docs/images/zizu-home.png)
 
 ---
 
@@ -109,8 +109,8 @@ Site (场站)
 ### 1. 克隆 & 配置
 
 ```bash
-git clone https://github.com/taidai/omnithings.git
-cd omnithings
+git clone https://github.com/taidai/zizu.git
+cd zizu
 cp .env.example .env   # 按需修改数据库密码
 ```
 
@@ -156,7 +156,7 @@ docker compose -f docker-compose.yml -f docker-compose.e606.yml up -d
 ## 目录结构
 
 ```
-omnithings/
+zizu/
 ├── backend/
 │   ├── app/
 │   │   ├── api/            # REST + WebSocket 路由
@@ -328,7 +328,7 @@ services:
 ## 链接
 
 - **官网**: [www.holoems.com](https://www.holoems.com)
-- **GitHub**: [github.com/taidai/omnithings](https://github.com/taidai/omnithings)
+- **GitHub**: [github.com/taidai/zizu](https://github.com/taidai/zizu)
 - **文档**: [docs/](docs/)
 
 ## 开发

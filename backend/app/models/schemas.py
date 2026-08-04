@@ -1,5 +1,5 @@
 """
-OmniThings F0 数据管道 — Pydantic 数据模型
+ZiZu F0 数据管道 — Pydantic 数据模型
 
 定义消息在管道中流转的数据结构：
   RawMessage → ParsedMessage → NormalizedPoint → TelemetryRecord

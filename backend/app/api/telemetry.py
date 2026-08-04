@@ -1,5 +1,5 @@
 """
-OmniThings Telemetry API — 数据表查询（验证数据入库）
+ZiZu Telemetry API — 数据表查询（验证数据入库）
 
 GET    /api/v1/telemetry           → 分页查询 t_telemetry 原始数据
 GET    /api/v1/telemetry/export    → 导出 CSV
@@ -201,7 +201,7 @@ async def export_telemetry_csv(
         ])
 
     output.seek(0)
-    filename = f"omnithings_telemetry_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"zizu_telemetry_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv; charset=utf-8-sig",

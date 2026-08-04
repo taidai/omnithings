@@ -1,7 +1,7 @@
 """
 F0 数据管道 — 管道编排器 (Pipeline)
 
-这是 OmniThings 的心脏。
+这是 ZiZu 的心脏。
 每一条 MQTT 消息都流经此管道:
   RawMessage → [Hook1 解析] → [Hook2 归一化] → [Hook3 存储] → [CE 透传骨架]
 

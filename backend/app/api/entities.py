@@ -1,5 +1,5 @@
 """
-OmniThings Entities API - 全局实体管理
+ZiZu Entities API - 全局实体管理
 
 实体是业务语义层（如 pcs.activePower），与具体品牌物理/虚拟点位解耦。
 """

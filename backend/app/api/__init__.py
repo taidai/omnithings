@@ -1,1 +1,1 @@
-"""OmniThings API routes package."""
+"""ZiZu API routes package."""

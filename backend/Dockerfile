@@ -1,12 +1,12 @@
 # ============================================================
-# OmniThings Unified Image - Multi-stage Docker Build
+# ZiZu Unified Image - Multi-stage Docker Build
 #
 # Stage 1: Node.js 构建前端 dist
 # Stage 2: Python 后端 + 前端静态文件
 #
 # 构建:
-#   docker build -t omnithings:0.1.0 ./backend
-#   docker buildx build --platform linux/arm64 -t omnithings:0.1.0 ./backend --load
+#   docker build -t zizu:0.1.0 ./backend
+#   docker buildx build --platform linux/arm64 -t zizu:0.1.0 ./backend --load
 #
 # 说明:
 #   - 基础镜像走 DaoCloud 加速 (docker.io 直连国内 EOF)
@@ -28,8 +28,8 @@ RUN npm run build
 # ---- Stage 2: Backend + Frontend ----
 FROM docker.m.daocloud.io/library/python:3.12-slim
 
-LABEL maintainer="OmniThings Team"
-LABEL description="OmniThings IoT Platform - Unified Backend + Frontend"
+LABEL maintainer="ZiZu Team"
+LABEL description="ZiZu IoT Platform - Unified Backend + Frontend"
 LABEL version="0.1.0"
 
 WORKDIR /app
@@ -69,9 +69,9 @@ COPY backend/app ./app
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # 非 root 运行
-RUN groupadd -r omnithings && useradd -r -g omnithings omnithings && \
-    chown -R omnithings:omnithings /app
-USER omnithings
+RUN groupadd -r zizu && useradd -r -g zizu zizu && \
+    chown -R zizu:zizu /app
+USER zizu
 
 EXPOSE 9000
 

@@ -1,5 +1,5 @@
 # ============================================================
-# OmniThings - e606 内核裁剪版专用 Override
+# ZiZu - e606 内核裁剪版专用 Override
 #
 # 用法: docker compose -f docker-compose.yml -f docker-compose.e606.yml up -d
 #
@@ -22,12 +22,12 @@ services:
     ports: []
 
   backend:
-    image: omnithings:latest-arm
+    image: zizu:latest-arm
     network_mode: host
     tmpfs:
       - /dev/mqueue
     ports: []
-    # 当前 omnithings:0.1.0 为 commit 层，/etc/passwd 中无 omnithings 用户，先用 root 运行
+    # 当前 zizu:0.1.0 为 commit 层，/etc/passwd 中无 zizu 用户，先用 root 运行
     user: root
     environment:
       # host 网络下通过 127.0.0.1 直连同宿主服务
@@ -39,4 +39,4 @@ services:
     volumes:
       - ./backend/app:/app/app:ro
       - ./frontend/dist:/app/frontend/dist:ro
-      - omnithings-data:/app/data
+      - zizu-data:/app/data

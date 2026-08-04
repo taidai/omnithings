@@ -1,1 +1,1 @@
-"""OmniThings services package."""
+"""ZiZu services package."""

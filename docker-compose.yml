@@ -1,5 +1,5 @@
 # ============================================================
-# OmniThings IoT Platform - Docker Compose (全栈一键部署)
+# ZiZu IoT Platform - Docker Compose (全栈一键部署)
 #
 # 三服务: TimescaleDB + FastAPI(Backend+Frontend SPA) + NanoMQ
 #
@@ -24,20 +24,20 @@ services:
   # ══════════════════════════════════════════
   timescaledb:
     image: timescale/timescaledb:latest-pg16
-    container_name: omnithings-tsdb
+    container_name: zizu-tsdb
     restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: ${DB_USER:-omnithings}
+      POSTGRES_USER: ${DB_USER:-zizu}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-omnidev_2026}
-      POSTGRES_DB: ${DB_NAME:-omnithings}
+      POSTGRES_DB: ${DB_NAME:-zizu}
       TIMESCALEDB_TELEMETRY: 'off'
     volumes:
       - tsdb_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-omnithings} -d ${DB_NAME:-omnithings} -h 127.0.0.1 -p 5432"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-zizu} -d ${DB_NAME:-zizu} -h 127.0.0.1 -p 5432"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,7 +52,7 @@ services:
   # ══════════════════════════════════════════
   nanomq:
     image: emqx/nanomq:latest
-    container_name: omnithings-nanomq
+    container_name: zizu-nanomq
     restart: unless-stopped
     ports:
       - "1883:1883"
@@ -83,8 +83,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    image: omnithings:0.1.0
-    container_name: omnithings
+    image: zizu:0.1.0
+    container_name: zizu
     restart: unless-stopped
     ports:
       - "9000:9000"
@@ -98,7 +98,7 @@ services:
       MQTT_PORT: 1883
       FRONTEND_DIST: /app/frontend/dist
     volumes:
-      - omnithings-data:/app/data
+      - zizu-data:/app/data
     working_dir: /app
     depends_on:
       timescaledb:
@@ -121,4 +121,4 @@ services:
 volumes:
   tsdb_data:
   nanomq_data:
-  omnithings-data:
+  zizu-data:

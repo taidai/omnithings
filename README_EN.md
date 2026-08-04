@@ -1,4 +1,4 @@
-# OmniThings
+# ZiZu
 
 > Self-hosted IoT Platform · Open-source Industrial IoT Low-code Platform
 >
@@ -8,9 +8,9 @@
 
 ---
 
-## What is OmniThings
+## What is ZiZu
 
-OmniThings is an IoT platform designed for **solar-storage-charging EMS, industrial energy monitoring, and remote device control** scenarios. The core philosophy is "**Configuration as Platform**" — all business logic is generated through UI configuration, with no hard-coded logic.
+ZiZu is an IoT platform designed for **solar-storage-charging EMS, industrial energy monitoring, and remote device control** scenarios. The core philosophy is "**Configuration as Platform**" — all business logic is generated through UI configuration, with no hard-coded logic.
 
 It integrates the four pillars of industrial IoT (device access / data pipeline / tag computation / control rules) into a pluggable pipeline:
 
@@ -29,7 +29,7 @@ Neuron ──MQTT──► nanoMQ ──► [F0 Data Pipeline] ──► [Timesc
 
 ## Feature Domains
 
-OmniThings capabilities are divided into four feature domains with **progressive delivery**:
+ZiZu capabilities are divided into four feature domains with **progressive delivery**:
 
 | Domain | One-liner | Core Capability | User Value |
 |--------|-----------|-----------------|------------|
@@ -97,8 +97,8 @@ A single JSON describes the complete hierarchy — no split into multiple concep
 ### 1. Clone & Configure
 
 ```bash
-git clone https://github.com/taidai/omnithings.git
-cd omnithings
+git clone https://github.com/taidai/zizu.git
+cd zizu
 cp .env.example .env   # Modify database password as needed
 ```
 
@@ -143,7 +143,7 @@ docker compose -f docker-compose.yml -f docker-compose.e606.yml up -d
 ## Project Structure
 
 ```
-omnithings/
+zizu/
 ├── backend/
 │   ├── app/
 │   │   ├── api/            # REST + WebSocket routes
@@ -300,5 +300,5 @@ See [`docs/decisions/`](docs/decisions/) for ADR decision records.
 ## Links
 
 - **Official Website**: [www.holoems.com](https://www.holoems.com)
-- **GitHub**: [github.com/taidai/omnithings](https://github.com/taidai/omnithings)
+- **GitHub**: [github.com/taidai/zizu](https://github.com/taidai/zizu)
 - **Documentation**: [docs/](docs/)
