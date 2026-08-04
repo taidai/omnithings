@@ -2,11 +2,11 @@
 
 ## 当前状态
 
-- 本地版本：**0.4.23**（commit `647e5ba`）
+- 本地版本：**0.4.30**（commit `3d71cb0`）
 - GitHub：`main` 已推送至 `https://github.com/taidai/zizu.git`
-- 2 号机部署：`e606.hlszh.com:3723`（SSH 端口 3723，账号 `holo` / `holo123`）
-  - Web：`http://e606.hlszh.com:3723`（实际服务端口 `9000`，FRP 转发）
-  - 容器：`zizu` 已重建，health 返回 `version: 0.4.23`
+- 2 号机部署：`e606.hlszh.com:3724`（SSH 端口 3723，账号 `holo` / `holo123`）
+  - Web：`http://e606.hlszh.com:3724`（实际服务端口 `9000`，FRP 转发）
+  - 容器：`omnithings` 已重建，health 返回 `version: 0.4.30`
   - MQTT：已连接，订阅 `/neuron/#`
 
 ## 本次完成
@@ -29,21 +29,21 @@
 - **修复**：在 `AdminPanel` 中新增「MQTT 北向主题配置」卡片：输入框编辑订阅主题、显示生效主题、保存后后端立即重订阅。
 - **文件**：[`frontend/src/components/AdminPanel.tsx`](/C:/Users/chent/Documents/zizu-explore/frontend/src/components/AdminPanel.tsx)
 
-### 4. 版本升级到 0.4.23
+### 4. 版本升级到 0.4.30
 - 使用 `python scripts/bump_version.py patch` 同步更新 `VERSION`、`backend/app/VERSION`、`frontend/package.json`、`backend/pyproject.toml`。
-- 本地 commit：`647e5ba fix(admin): prevent DataBrowser from auto-loading heavy telemetry query on mount; bump v0.4.23`
+- 本地 commit：`3d71cb0 fix(admin): prevent DataBrowser from auto-loading heavy telemetry query on mount; bump v0.4.30`
 
 ### 5. 部署到 2 号机并推送到 GitHub
 - 本地 `npm run build` 通过。
 - 打包 `frontend/dist`、`VERSION` 为 zip，通过 `pscp` 上传到 `/tmp`。
 - 远程解压并更新 `/home/zizu/frontend/dist` 与 `/home/zizu/VERSION`，同步 `/home/zizu/backend/app/VERSION`。
 - `docker compose -f docker-compose.yml -f docker-compose.host.yml up -d --force-recreate backend` 重建后端容器。
-- Health 检查通过，返回 `version: 0.4.23`。
+- Health 检查通过，返回 `version: 0.4.30`。
 - `git push origin main` 成功。
 
 ## 已知问题 / 注意
 
-1. **Docker 镜像标签仍为 `zizu:0.4.12`**：当前通过 volume 挂载最新代码运行，功能已生效；后续如需镜像标签一致，需要重新 build 并 tag 为 `0.4.23`。
+1. **Docker 镜像标签仍为 `zizu:0.4.12`**：当前通过 volume 挂载最新代码运行，功能已生效；后续如需镜像标签一致，需要重新 build 并 tag 为 `0.4.30`。
 2. **容器日志出现 `skipped: maximum number of running instances reached`**：F1/F2/F3 定时任务执行耗时较长导致 APScheduler 跳过重叠实例，目前不影响实时数据流，但需后续优化调度间隔或任务性能。
 3. **部署脚本待整理**：建议后续把 2 号机部署流程固化到 `scripts/deploy-2.ps1` 或 `deploy2.sh`，避免路径/权限问题。
 
@@ -67,3 +67,12 @@
 5. 优化 APScheduler 任务重叠问题（增大间隔或拆分耗时任务）。
 6. 如需要，统一 Docker 镜像 tag 并重新 build 镜像。
 7. 继续完善节点管理、规则引擎、IPO 闭环等工业控制功能。
+
+## 本次补充（2026-08-04）
+
+### 清理 OmniThings 残留并部署
+- 修复 `backend/app/core/__init__.py` 与 `.gitignore` 中的 OmniThings 残留
+- commit: `3d71cb0 chore: rename remaining OmniThings references to ZiZu`
+- 重新构建前端并部署到 2 号机 `/home/omnithings`
+- Health: `http://e606.hlszh.com:3724/api/v1/health` 返回 `version: 0.4.30`
+- 注意：2 号机 Web 端口为 3724，3723 为 SSH；远程目录/容器名仍为 omnithings
