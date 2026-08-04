@@ -3,6 +3,8 @@
 > 自足物联网平台 · 开源工业 IoT 低代码平台
 >
 > **简单配置即可交付工业控制系统** — 替代 ThingsBoard 的轻量级方案。
+>
+> 当前版本：**v0.4.30**
 
 **中文** | [English](README_EN.md) | [官网 www.holoems.com](https://www.holoems.com)
 
@@ -29,14 +31,15 @@ OmniThings 是一套面向**光储充 EMS、工业能耗监测、设备远程控
 
 ## 功能域分层
 
-OmniThings 的能力被切成四个功能域，**渐进交付**：
+OmniThings 的能力被切成五个功能域，**渐进交付**：
 
 | 域 | 一句话 | 核心能力 | 用户价值 |
 |----|--------|---------|---------|
 | **F0** | 数据管道流计算 | MQTT→解析→归一化→Hook 链→TSDB | **设备上线就能看到原始数据** |
 | **F1** | 自定义物理/虚拟点位 | PhysicalTag 采集映射 + LogicalTag(SymPy 公式求值) | **灵活定义任意衍生指标** |
 | **F3** | 节点树挂载点位 + 聚合 | 5 层统一树 + 每层 SUM/AVG/MAX 汇总 | **每层节点都是一等公民，有独立实时值** |
-| **F2** | 控制策略 (GoRules) | RPC 回写 + JDM 决策表/决策图 + 审计日志，已接入 GoRules zen-engine + jdm-editor 可视化编辑器 | **安全可控地反向控制设备** |
+| **F2** | 控制策略 (GoRules) | GoRules ZEN 引擎 + JDM 可视化编辑 + RPC 回写 + 审计日志 | **安全可控地反向控制设备** |
+| **F4** | 全局实体 | 业务语义实体（R/W/RW）绑定物理/虚拟点位，全局用于实时/历史/规则/控制 | **多品牌设备工况，配置即可适配** |
 
 ### 五层节点树
 
@@ -76,16 +79,18 @@ Site (场站)
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| **F0 数据管道** | ✅ 已交付 | MQTT→Parser→Normalizer→TSDB 全链路跑通，~10 msg/s 持续入库 |
-| **F0 可视化 V1** | ✅ 已交付 | 点位列表 + 行内编辑 offset/scale + 实时值双列 (raw/eng) + WebSocket 推送 |
-| **Neuron 点位同步** | ✅ 已交付 | `sync_neuron_tags.py` 一键发现节点/分组/标签，自动入库 |
-| **F0 快照黑板** | ✅ 已交付 | 节点级全量 JSONB 快照，时间戳对齐 |
-| **F1 历史数据** | ✅ 已交付 | `t_telemetry` 超级表（hypertable）+ `t_telemetry_latest` 最新值缓存 |
-| **F1 虚拟点位** | ✅ 已交付 | 公式引擎 + 条件表达式，逻辑点位实时求值入库 |
-| **F3 节点聚合** | ✅ 已交付 | 5 层树 + 每层 SUM/AVG/MAX/MIN/COUNT/LAST 汇总（10s 周期） |
-| **F2 控制规则** | ✅ 已交付 | GoRules zen-engine 求值 + 告警产生/确认 + RPC 下行 + jdm-editor 可视化规则编辑 |
+| **F0 数据管道** | ✅ | MQTT→Parser→Normalizer→TSDB 全链路，~10 msg/s 持续入库 |
+| **F0 可视化** | ✅ | 点位列表 + 行内编辑 offset/scale + 实时值双列 + WebSocket 推送 |
+| **Neuron 点位同步** | ✅ | `sync_neuron_tags.py` 一键发现节点/分组/标签，自动入库 |
+| **F0 快照黑板** | ✅ | 节点级全量 JSONB 快照，时间戳对齐 |
+| **F1 历史数据** | ✅ | `t_telemetry` hypertable + `t_telemetry_latest` 最新值缓存 |
+| **F1 虚拟点位** | ✅ | SymPy 公式引擎，逻辑点位实时求值入库 |
+| **F3 节点聚合** | ✅ | 5 层树 + SUM/AVG/MAX/MIN/COUNT/LAST 汇总（10s 周期） |
+| **F2 控制规则** | ✅ | GoRules ZEN + JDM Editor + 告警 + RPC 下行 |
+| **F2 告警中心** | ✅ | 分级告警（error1/2/3），支持 0/1 与字符串故障信息 |
+| **F4 全局实体** | ✅ | 业务语义实体绑定物理/虚拟点位，实时/历史/规则/控制全局可用 |
 
-> 验收状态：F0/F1/F2/F3 端到端验收脚本 **14 passed / 0 failed**（`backend/acceptance_f0_f3.py` 当前版本），已接入 GoRules zen-engine + jdm-editor 可视化规则编辑，告警触发时记录来源节点/点位/触发值，已部署至 e606 线上环境。
+> 验收：`backend/acceptance_f0_f3.py` 14 passed / 0 failed；已部署 e606 线上环境。
 
 ### 实现效果图
 
@@ -155,22 +160,17 @@ omnithings/
 ├── backend/
 │   ├── app/
 │   │   ├── api/            # REST + WebSocket 路由
-│   │   │   ├── health.py   #   管道健康状态
-│   │   │   ├── nodes.py    #   节点列表
-│   │   │   ├── tags.py     #   点位 CRUD + 行内编辑
-│   │   │   ├── telemetry.py#   原始数据查询
-│   │   │   ├── snapshots.py#   节点快照查询
-│   │   │   ├── admin.py    #   开发者工具
-│   │   │   └── websocket.py#   实时值推送
 │   │   ├── core/           # 配置 (pydantic-settings)
 │   │   ├── db/             # 数据库连接池
 │   │   ├── models/         # Pydantic 数据模型
 │   │   ├── services/       # 核心管道
-│   │   │   ├── mqtt_client.py      #  MQTT 接入层
-│   │   │   ├── parser.py           #  Neuron 报文解析
-│   │   │   ├── normalizer.py      #  pint 单位归一化
-│   │   │   ├── pipeline.py        #  Hook 链 + 批量 flush
-│   │   │   └── telemetry_store.py #  TSDB 写入
+│   │   │   ├── mqtt_client.py     # MQTT 接入层
+│   │   │   ├── parser.py          # Neuron 报文解析
+│   │   │   ├── normalizer.py      # pint 单位归一化
+│   │   │   ├── pipeline.py        # Hook 链 + 批量 flush
+│   │   │   ├── telemetry_store.py # TSDB 写入
+│   │   │   ├── entity_resolver.py # F4 实体解析/实时/历史/写入
+│   │   │   └── rule_engine.py     # F2 GoRules 规则求值
 │   │   └── main.py
 │   ├── scripts/
 │   │   └── sync_neuron_tags.py    # Neuron API → t_tags 自动同步
@@ -223,6 +223,16 @@ omnithings/
 | POST | `/api/v1/query` | SELECT-only SQL 查询 |
 | WS | `/api/v1/ws/telemetry` | 实时原始值/工程值推送 |
 | POST | `/api/v1/rules/{id}/simulate` | 模拟规则（返回 triggered/actions/engine） |
+| GET | `/api/v1/entities` | 全局实体列表 |
+| POST | `/api/v1/entities` | 创建全局实体 |
+| GET | `/api/v1/entities/{id}` | 实体详情及绑定 |
+| PUT | `/api/v1/entities/{id}` | 更新实体元数据 |
+| DELETE | `/api/v1/entities/{id}` | 删除实体 |
+| POST | `/api/v1/entities/{id}/bindings` | 实体绑定点位 |
+| DELETE | `/api/v1/entities/{id}/bindings/{bid}` | 删除绑定 |
+| GET | `/api/v1/entities/{id}/realtime` | 实体实时值 |
+| GET | `/api/v1/entities/{id}/history` | 实体历史数据 |
+| POST | `/api/v1/entities/{id}/write` | 向实体写入控制值 |
 
 ---
 
@@ -245,6 +255,15 @@ t_telemetry(ts, node_id, tag_id, value_int, value_float, value_bool, value_str)
 
 -- 节点快照（数据黑板）
 t_node_snapshot(ts, node_id, data JSONB, raw_data JSONB, raw_message JSONB)
+
+-- 全局实体（业务语义层）
+t_entities(id, name, entity_type, data_type, unit, category, enabled)
+
+-- 实体 ↔ 点位绑定
+t_entity_bindings(entity_id, tag_id, node_id, binding_type, brand, priority, enabled)
+
+-- 实体最新值缓存
+t_entity_telemetry_latest(entity_id, binding_id, tag_id, node_id, ts, value_*)
 
 -- 连续聚合（多粒度查询）
 cagg_telemetry_1min, cagg_telemetry_5min, cagg_telemetry_1h
