@@ -69,6 +69,8 @@ class DataPipeline:
         self._buffer: list[TelemetryRecord] = []
         self._buffer_lock = asyncio.Lock()
         self._flush_lock = asyncio.Lock()  # 串行化 flush，避免连接池耗尽
+        self._flush_event = asyncio.Event()  # 缓冲区满或停更时唤醒 flush
+        self._stop_event = asyncio.Event()
         self._flush_task: asyncio.Task | None = None
 
         # ---- tag 规则动态重载 ----
@@ -99,8 +101,8 @@ class DataPipeline:
         self._mqtt = MqttClient(on_message_callback=self.on_message)
         await self._mqtt.start()
 
-        # Step 4: 启动批量写入 flush 定时任务
-        self._flush_task = asyncio.create_task(self._periodic_flush())
+        # Step 4: 启动批量写入 flush 后台任务
+        self._flush_task = asyncio.create_task(self._flush_loop())
 
         # Step 5: 启动 tag 规则动态重载任务
         self._reload_task = asyncio.create_task(self._periodic_reload_rules())
@@ -133,15 +135,16 @@ class DataPipeline:
                 pass
 
         # 停止 flush task
+        self._stop_event.set()
+        self._flush_event.set()
         if self._flush_task and not self._flush_task.done():
-            self._flush_task.cancel()
             try:
                 await self._flush_task
             except asyncio.CancelledError:
                 pass
 
         # 最后一次 flush
-        if self._buffer:
+        async with self._flush_lock:
             await self._do_flush()
 
         # 断开 MQTT
@@ -230,11 +233,8 @@ class DataPipeline:
                 logger.error("[Pipeline] Tag alarm processing failed: {}", e)
         async with self._buffer_lock:
             self._buffer.extend(records)
-            should_flush = len(self._buffer) >= settings.pipeline_batch_size
-
-        if should_flush:
-            async with self._flush_lock:
-                await self._do_flush()
+            if len(self._buffer) >= settings.pipeline_batch_size:
+                self._flush_event.set()
 
         # ══════════════════════════════════════
         # CE 三条路径 (按需激活, F0 阶段全部透传)
@@ -424,10 +424,17 @@ class DataPipeline:
             except Exception as e:
                 logger.warning("[Pipeline] Periodic reload rules failed: {}", e)
 
-    async def _periodic_flush(self) -> None:
-        """定时 flush 缓冲区到 DB。"""
-        while True:
-            await asyncio.sleep(settings.pipeline_flush_interval_sec)
+    async def _flush_loop(self) -> None:
+        """后台 flush 循环：缓冲区满或超时则写入 DB。"""
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    self._flush_event.wait(),
+                    timeout=settings.pipeline_flush_interval_sec,
+                )
+            except asyncio.TimeoutError:
+                pass
+            self._flush_event.clear()
             if self._buffer:
                 async with self._flush_lock:
                     await self._do_flush()

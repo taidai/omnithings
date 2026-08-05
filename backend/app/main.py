@@ -27,8 +27,8 @@ logger.add(
 
 # Pipeline 实例引用 (供 Health API 使用)
 _pipeline = None
-# F3 聚合调度器引用
-_scheduler = None
+# F1/F2/F3 调度任务列表
+_scheduler_tasks = []
 # 聚合 tick 间隔 (秒)
 AGGREGATION_INTERVAL_SEC = 60
 # F1 公式 tick 间隔 (秒)，比聚合更频繁，保证虚拟点先产出
@@ -55,7 +55,8 @@ APP_VERSION = _load_version()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan — 启停 F0 数据管道 + F3 聚合调度器。"""
-    global _pipeline, _scheduler
+    global _pipeline, _scheduler_tasks
+    import asyncio
 
     # ---- Startup ----
     logger.info("ZiZu IoT Platform starting up...")
@@ -99,83 +100,57 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.error("[Main] Shutting down — no MQTT ingestion without pipeline")
         raise  # fail-fast: 管道是核心组件，死了就不该假装活着
 
-    # Phase 2 S12: 启动 F3 聚合调度器 (LogicalTag 汇总)
-    # 非致命：聚合器失败不影响 F0 采集主链路
+    # Phase 2 S12/S6/S7: 启动 F1/F2/F3 调度器（原生 asyncio，不依赖 APScheduler）
+    # 非致命：调度器失败不影响 F0 采集主链路
+    _scheduler_tasks = []
     try:
-        import asyncio
-
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
         from app.services.aggregator import run_aggregation_tick
+        from app.services.formula_engine import run_formula_tick
+        from app.services.rule_engine import run_rule_tick
 
-        async def _agg_job() -> None:
-            # psycopg2 阻塞 → 丢到线程池，避免卡住事件循环
-            await asyncio.to_thread(run_aggregation_tick)
+        async def _periodic_task(name: str, interval: int, fn) -> None:
+            while True:
+                await asyncio.sleep(interval)
+                try:
+                    await asyncio.to_thread(fn)
+                except Exception as e:
+                    logger.warning("[Scheduler] {} tick failed: {}", name, e)
 
-        _scheduler = AsyncIOScheduler(timezone="UTC")
-        _scheduler.add_job(
-            _agg_job,
-            "interval",
-            seconds=AGGREGATION_INTERVAL_SEC,
-            id="f3_aggregation",
-            coalesce=True,          # 积压时只跑最近一次
-            max_instances=1,        # 禁止并发重入
-            misfire_grace_time=300,
+        _scheduler_tasks.append(
+            asyncio.create_task(
+                _periodic_task("aggregation", AGGREGATION_INTERVAL_SEC, run_aggregation_tick),
+                name="f3_aggregation",
+            )
         )
-
-        # Phase 2 S6: 启动 F1 公式调度器 (SymPy expression / condition)
-        try:
-            from app.services.formula_engine import run_formula_tick
-
-            async def _formula_job() -> None:
-                await asyncio.to_thread(run_formula_tick)
-
-            _scheduler.add_job(
-                _formula_job,
-                "interval",
-                seconds=FORMULA_INTERVAL_SEC,
-                id="f1_formula",
-                coalesce=True,
-                max_instances=1,
-                misfire_grace_time=300,
+        _scheduler_tasks.append(
+            asyncio.create_task(
+                _periodic_task("formula", FORMULA_INTERVAL_SEC, run_formula_tick),
+                name="f1_formula",
             )
-            logger.success("[Main] F1 formula scheduler started ({}s) ✅", FORMULA_INTERVAL_SEC)
-        except Exception as e:
-            logger.error("[Main] F1 formula scheduler failed to start (non-fatal): {}", e)
-
-        # Phase 2 S7: 启动 F2 规则调度器 (告警/控制/联动)
-        try:
-            from app.services.rule_engine import run_rule_tick
-
-            async def _rule_job() -> None:
-                await asyncio.to_thread(run_rule_tick)
-
-            _scheduler.add_job(
-                _rule_job,
-                "interval",
-                seconds=RULE_INTERVAL_SEC,
-                id="f2_rules",
-                coalesce=True,
-                max_instances=1,
-                misfire_grace_time=300,
+        )
+        _scheduler_tasks.append(
+            asyncio.create_task(
+                _periodic_task("rules", RULE_INTERVAL_SEC, run_rule_tick),
+                name="f2_rules",
             )
-            logger.success("[Main] F2 rule scheduler started ({}s) ✅", RULE_INTERVAL_SEC)
-        except Exception as e:
-            logger.error("[Main] F2 rule scheduler failed to start (non-fatal): {}", e)
-
-        _scheduler.start()
-        logger.success("[Main] F3 aggregation scheduler started ({}s) ✅", AGGREGATION_INTERVAL_SEC)
+        )
+        logger.success(
+            "[Main] F1/F2/F3 schedulers started (formula={}s, rules={}s, agg={}s) ✅",
+            FORMULA_INTERVAL_SEC, RULE_INTERVAL_SEC, AGGREGATION_INTERVAL_SEC,
+        )
     except Exception as e:
-        logger.error("[Main] F3 scheduler failed to start (non-fatal): {}", e)
-        _scheduler = None
+        logger.error("[Main] F1/F2/F3 scheduler start failed (non-fatal): {}", e)
 
     yield
 
     # ---- Shutdown ----
     logger.info("ZiZu IoT Platform shutting down...")
-    if _scheduler:
-        _scheduler.shutdown(wait=False)
-        logger.info("[Main] F3 aggregation scheduler stopped")
+    for _task in _scheduler_tasks:
+        if not _task.done():
+            _task.cancel()
+    if _scheduler_tasks:
+        await asyncio.gather(*_scheduler_tasks, return_exceptions=True)
+        logger.info("[Main] F1/F2/F3 schedulers stopped")
     if _pipeline:
         await _pipeline.stop()
         logger.info("[Main] F0 data pipeline stopped")
