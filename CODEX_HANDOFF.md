@@ -1,3 +1,16 @@
+## 2026-08-05 修复 1 号机前端功能不可见（v0.4.39）
+
+- **根因**：v0.4.38 部署时，远程 /home/omnithings/frontend/dist 仍引用旧构建产物（index-BCQ9G83I.js、NodeTreePage-BP1XLU_w.js），导致前端版本号与后端一致，但新功能（告警分级、故障表、全局实体批量绑定等）未在界面呈现。
+- **修复**：
+  - 本地重新执行 
+pm run build，生成新的构建产物（index-CR-rwAI2.js、NodeTreePage-XirERRw4.js）；
+  - 使用 scripts/deploy_1号机.py --skip-build --skip-migrations 重新同步 rontend/dist 与 ackend/app，并强制重建 omnithings 容器；
+  - 验证远程 index.html 已指向新的 JS hash。
+- **版本**：升级到 **0.4.39**，commit 486e147 已 push 到 https://github.com/taidai/zizu.git。
+- **部署验证**：
+  - 1 号机 http://e606.hlszh.com:9000/api/v1/health 返回 ersion: 0.4.39；
+  - pipeline RUNNING，MQTT 已连接，db_write_errors 为 0；
+  - 远程 dist 产物时间戳与 hash 已与本地一致。
 ## 2026-08-05 告警分级与故障码转义
 
 - 数据库：新增 init-db/migration_014_alarm_level_fault_map.sql
