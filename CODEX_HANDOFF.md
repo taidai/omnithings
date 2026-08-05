@@ -1,3 +1,26 @@
+## 2026-08-05 删除节点快照功能
+
+- 删除后端：
+  - backend/app/api/snapshots.py（整 router）
+  - backend/app/services/telemetry_store.py 中的 batch_insert_snapshots
+  - backend/app/services/pipeline.py 中的快照缓冲、_to_snapshot、节点状态缓存
+  - backend/app/models/schemas.py 中的 NodeSnapshotRecord
+  - backend/app/api/admin.py 中的 t_node_snapshot 清空白名单
+  - backend/app/api/categories.py 中的 snapshot_enabled / retention_days
+  - backend/app/main.py 中的 snapshots_router 注册
+- 删除前端：
+  - frontend/src/components/NodeSnapshotPanel.tsx
+  - frontend/src/components/SnapshotTable.tsx
+  - DataBrowser / AdminPanel / NodeTreePage 中的快照相关 UI 与 API 调用
+  - client.ts 中的 Snapshot API 和 Category 中的快照字段
+- 数据库：
+  - 删除 init-db/004-node-snapshot.sql、migration_007_snapshot_retention_1day.sql
+  - 新增 init-db/migration_013_drop_snapshots.sql：删除 t_node_snapshot 表及策略、清理 t_node_categories 快照字段
+  - 更新 init-db/005-node-categories.sql，移除快照相关字段
+- 版本：升级到 **0.4.34**。
+- 构建：frontend npm run build 通过；后端 py_compile 通过。
+- GitHub：main 已推送至 https://github.com/taidai/zizu.git（66db3b0）。
+
 # ZiZu 会话交接
 
 ## 2026-08-05 全局实体：国家标准/国际标准内置实体
@@ -20,7 +43,7 @@
 
 ## 当前状态
 
-- 本地版本：**0.4.33**（commit d6aeeb0）
+- 本地版本：**0.4.34**（commit 66db3b0）
 - GitHub：`main` 已推送至 `https://github.com/taidai/zizu.git`
 - 2 号机部署：`e606.hlszh.com:3724`（SSH 端口 3723，账号 `holo` / `holo123`）
   - Web：`http://e606.hlszh.com:3724`（实际服务端口 `9000`，FRP 转发）
