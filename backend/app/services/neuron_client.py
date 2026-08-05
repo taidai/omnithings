@@ -2,13 +2,16 @@
 Neuron API Client — Neuron 工业协议网关 API 封装
 
 封装 Neuron REST API v2，提供节点/组/点位管理功能。
+使用标准库 urllib 替代 httpx，避免目标镜像缺少 httpx 依赖。
 """
 from __future__ import annotations
 
+import json
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
 from loguru import logger
 
 
@@ -26,28 +29,36 @@ class NeuronClient:
     def __init__(self, config: NeuronConfig | None = None):
         self.config = config or NeuronConfig()
         self._token: str | None = None
-        self._client = httpx.Client(timeout=self.config.timeout)
+        self._timeout = self.config.timeout
+
+    def _http_request(self, method: str, url: str, data: dict | None = None, headers: dict | None = None) -> dict:
+        """使用 urllib 发送 JSON 请求并解析响应。"""
+        body = json.dumps(data).encode("utf-8") if data is not None else None
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json", **(headers or {})},
+            method=method.upper(),
+        )
+        with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            content = resp.read().decode("utf-8")
+            return json.loads(content) if content else {}
 
     def _ensure_token(self) -> str:
         """确保已登录，返回 JWT token。"""
         if self._token:
             return self._token
 
-        try:
-            resp = self._client.post(
-                f"{self.config.url}/api/v2/login",
-                json={"name": self.config.username, "pass": self.config.password},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            self._token = data.get("token")
-            if not self._token:
-                raise RuntimeError(f"Neuron login failed: {data}")
-            logger.info("[Neuron] Login success")
-            return self._token
-        except Exception as e:
-            logger.error("[Neuron] Login failed: {}", e)
-            raise
+        data = self._http_request(
+            "POST",
+            f"{self.config.url}/api/v2/login",
+            data={"name": self.config.username, "pass": self.config.password},
+        )
+        self._token = data.get("token")
+        if not self._token:
+            raise RuntimeError(f"Neuron login failed: {data}")
+        logger.info("[Neuron] Login success")
+        return self._token
 
     def _request(self, method: str, path: str, **kwargs) -> Any:
         """发送 API 请求。"""
@@ -55,18 +66,13 @@ class NeuronClient:
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {token}"
 
-        resp = self._client.request(
-            method,
-            f"{self.config.url}{path}",
-            headers=headers,
-            **kwargs,
-        )
-        resp.raise_for_status()
-        return resp.json()
+        data = kwargs.pop("json", None)
+        url = f"{self.config.url}{path}"
+        return self._http_request(method, url, data=data, headers=headers)
 
-    # ══════════════════════════════════════
+    # ══════════════════════════════════════════
     # 节点管理 (Driver Nodes)
-    # ══════════════════════════════════════
+    # ══════════════════════════════════════════
 
     def get_nodes(self, node_type: int = 1) -> list[dict]:
         """
@@ -83,8 +89,8 @@ class NeuronClient:
         try:
             data = self._request("GET", f"/api/v2/node/{node_name}")
             return data
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
                 return None
             raise
 
@@ -125,9 +131,9 @@ class NeuronClient:
         """获取节点状态。"""
         return self._request("GET", f"/api/v2/node/{name}/state")
 
-    # ══════════════════════════════════════
+    # ══════════════════════════════════════════
     # 组管理 (Groups)
-    # ══════════════════════════════════════
+    # ══════════════════════════════════════════
 
     def get_groups(self, node_name: str) -> list[dict]:
         """获取节点下的组列表。"""
@@ -159,9 +165,9 @@ class NeuronClient:
         """删除组。"""
         return self._request("DELETE", f"/api/v2/group/{node_name}/{group_name}")
 
-    # ══════════════════════════════════════
+    # ══════════════════════════════════════════
     # 点位管理 (Tags)
-    # ══════════════════════════════════════
+    # ══════════════════════════════════════════
 
     def get_tags(self, node_name: str, group_name: str) -> list[dict]:
         """获取组下的点位列表。
@@ -209,9 +215,9 @@ class NeuronClient:
         }
         return self._request("POST", "/api/v2/write", json=payload)
 
-    # ══════════════════════════════════════
+    # ══════════════════════════════════════════
     # 状态监控
-    # ══════════════════════════════════════
+    # ══════════════════════════════════════════
 
     def get_global_config(self) -> dict:
         """获取全局配置。"""
@@ -228,12 +234,12 @@ class NeuronClient:
 
     def close(self) -> None:
         """关闭客户端。"""
-        self._client.close()
+        pass
 
 
-# ══════════════════════════════════════
+# ══════════════════════════════════════════
 # 全局单例
-# ══════════════════════════════════════
+# ══════════════════════════════════════════
 
 _neuron_client: NeuronClient | None = None
 
@@ -243,6 +249,7 @@ def get_neuron_client() -> NeuronClient:
     global _neuron_client
     if _neuron_client is None:
         from app.core.config import settings
+
         config = NeuronConfig(
             url=settings.neuron_api_url,
             username=settings.neuron_username,
