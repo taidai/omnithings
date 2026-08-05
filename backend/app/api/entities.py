@@ -69,6 +69,7 @@ class EntityResponse(BaseModel):
     binding_count: int = 0
     created_at: str | None = None
     updated_at: str | None = None
+    is_system: bool = False
 
 
 class BindingResponse(BaseModel):
@@ -104,12 +105,81 @@ def _row_to_entity(row: dict) -> dict:
         "binding_count": row.get("binding_count", 0),
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        "is_system": bool(row.get("is_system", False)),
     }
 
 
 # ========================================
 # Endpoints
 # ========================================
+
+
+def _standard_entities_rows() -> list[tuple]:
+    """内置国家标准/国际标准实体定义，与 migration_012_standard_entities.sql 保持一致。"""
+    return [
+        # 光伏
+        ("pv.activePower", "光伏有功功率", "R", "FLOAT", "kW", "pv", "GB/T 19964 / IEC 61850-7-420 光伏发电有功功率"),
+        ("pv.reactivePower", "光伏无功功率", "R", "FLOAT", "kVar", "pv", "GB/T 19964 光伏发电无功功率"),
+        ("pv.powerFactor", "光伏功率因数", "R", "FLOAT", None, "pv", "GB/T 19964 光伏功率因数"),
+        ("pv.voltage", "光伏并网电压", "R", "FLOAT", "V", "pv", "GB/T 19964 光伏并网电压"),
+        ("pv.current", "光伏并网电流", "R", "FLOAT", "A", "pv", "GB/T 19964 光伏并网电流"),
+        ("pv.frequency", "光伏并网频率", "R", "FLOAT", "Hz", "pv", "GB/T 19964 光伏并网频率"),
+        ("pv.irradiance", "光伏辐照度", "R", "FLOAT", "W/m²", "pv", "IEC 61850-7-420 水平面辐照度"),
+        ("pv.moduleTemp", "组件温度", "R", "FLOAT", "°C", "pv", "IEC 61850-7-420 光伏组件温度"),
+        ("pv.ambientTemp", "环境温度", "R", "FLOAT", "°C", "pv", "IEC 61850-7-420 光伏环境温度"),
+        ("pv.dailyEnergy", "光伏日发电量", "R", "FLOAT", "kWh", "pv", "GB/T 19964 光伏日发电量"),
+        ("pv.totalEnergy", "光伏累计发电量", "R", "FLOAT", "kWh", "pv", "GB/T 19964 光伏累计发电量"),
+        ("pv.status", "逆变器状态", "R", "INT", None, "pv", "GB/T 19964 / IEC 61850-7-420 逆变器运行状态"),
+        ("pv.faultCode", "光伏故障代码", "R", "STRING", None, "pv", "GB/T 19964 光伏故障代码"),
+        # 储能
+        ("ess.activePower", "储能有功功率", "R", "FLOAT", "kW", "ess", "GB/T 36558 电化学储能系统有功功率（充电为负，放电为正）"),
+        ("ess.reactivePower", "储能无功功率", "R", "FLOAT", "kVar", "ess", "GB/T 36558 电化学储能系统无功功率"),
+        ("ess.soc", "电池 SOC", "R", "FLOAT", "%", "ess", "GB/T 36558 电池荷电状态 SOC"),
+        ("ess.soh", "电池 SOH", "R", "FLOAT", "%", "ess", "GB/T 36558 电池健康状态 SOH"),
+        ("ess.voltage", "电池总电压", "R", "FLOAT", "V", "ess", "GB/T 36558 电池堆/簇总电压"),
+        ("ess.current", "电池总电流", "R", "FLOAT", "A", "ess", "GB/T 36558 电池堆/簇总电流"),
+        ("ess.maxCellTemp", "最高单体温度", "R", "FLOAT", "°C", "ess", "GB/T 36558 电池最高单体温度"),
+        ("ess.minCellTemp", "最低单体温度", "R", "FLOAT", "°C", "ess", "GB/T 36558 电池最低单体温度"),
+        ("ess.maxCellVoltage", "最高单体电压", "R", "FLOAT", "V", "ess", "GB/T 36558 电池最高单体电压"),
+        ("ess.minCellVoltage", "最低单体电压", "R", "FLOAT", "V", "ess", "GB/T 36558 电池最低单体电压"),
+        ("ess.chargeEnergy", "累计充电电量", "R", "FLOAT", "kWh", "ess", "GB/T 36558 电化学储能累计充电电量"),
+        ("ess.dischargeEnergy", "累计放电电量", "R", "FLOAT", "kWh", "ess", "GB/T 36558 电化学储能累计放电电量"),
+        ("ess.status", "储能系统状态", "R", "INT", None, "ess", "GB/T 36558 电化学储能系统运行状态"),
+        ("ess.mode", "储能运行模式", "RW", "STRING", None, "ess", "GB/T 36558 电化学储能系统运行模式（调度/削峰填谷/需量控制等）"),
+        ("ess.faultCode", "储能故障代码", "R", "STRING", None, "ess", "GB/T 36558 电化学储能系统故障代码"),
+        # 充电桩
+        ("charger.connectorStatus", "充电枪连接状态", "R", "INT", None, "charger", "GB/T 18487.1 / IEC 61851 充电枪连接状态"),
+        ("charger.chargingPower", "充电功率", "R", "FLOAT", "kW", "charger", "GB/T 18487.1 充电桩实时充电功率"),
+        ("charger.chargingCurrent", "充电电流", "R", "FLOAT", "A", "charger", "GB/T 18487.1 充电桩实时充电电流"),
+        ("charger.chargingVoltage", "充电电压", "R", "FLOAT", "V", "charger", "GB/T 18487.1 充电桩实时充电电压"),
+        ("charger.soc", "车辆 SOC", "R", "FLOAT", "%", "charger", "GB/T 18487.1 车辆电池 SOC"),
+        ("charger.chargedEnergy", "已充电量", "R", "FLOAT", "kWh", "charger", "GB/T 18487.1 本次已充电量"),
+        ("charger.connectorTemp", "充电枪温度", "R", "FLOAT", "°C", "charger", "GB/T 18487.1 充电枪温度"),
+        ("charger.faultCode", "充电桩故障代码", "R", "STRING", None, "charger", "GB/T 18487.1 充电桩故障代码"),
+        ("charger.startCharging", "启动充电", "W", "BOOL", None, "charger", "GB/T 18487.1 / IEC 61851 启动充电控制指令"),
+        ("charger.stopCharging", "停止充电", "W", "BOOL", None, "charger", "GB/T 18487.1 / IEC 61851 停止充电控制指令"),
+    ]
+
+
+@router.post("/entities/seed")
+async def seed_entities() -> dict:
+    """重新初始化系统内置实体（幂等）。"""
+    rows = _standard_entities_rows()
+    insert_sql = """
+    INSERT INTO t_entities (name, display_name, entity_type, data_type, unit, category, description, enabled, is_system)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, TRUE)
+    ON CONFLICT (name) DO NOTHING
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(insert_sql, rows)
+                conn.commit()
+                return {"seeded": len(rows), "ok": True}
+    except Exception as e:
+        logger.error("[API/entities] seed failed: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/entities")
 async def list_entities(
@@ -266,7 +336,8 @@ async def list_bindings(
         e.display_name AS entity_display_name,
         e.entity_type,
         e.data_type,
-        e.unit AS entity_unit
+        e.unit AS entity_unit,
+        e.is_system AS entity_is_system
     FROM t_entity_bindings b
     JOIN t_tags t ON t.id = b.tag_id
     JOIN t_nodes n ON n.id = b.node_id
@@ -300,6 +371,7 @@ async def list_bindings(
                     "entity_type": r.get("entity_type"),
                     "data_type": r.get("data_type"),
                     "unit": r.get("entity_unit"),
+                    "entity_is_system": bool(r.get("entity_is_system", False)),
                 }
                 for r in rows
             ],
@@ -466,6 +538,39 @@ async def get_entity(entity_id: str) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _check_system_protected(eid: UUID, req: EntityUpdateRequest) -> None:
+    """系统实体不允许修改核心元数据（名称、分类、类型、数据类型）。"""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT is_system FROM t_entities WHERE id = %s", (eid,))
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Entity not found")
+                is_system = bool(row[0]) if row[0] is not None else False
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[API/entities] check system failed: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if not is_system:
+        return
+
+    forbidden = []
+    if req.entity_type is not None:
+        forbidden.append("entity_type")
+    if req.data_type is not None:
+        forbidden.append("data_type")
+    if req.category is not None:
+        forbidden.append("category")
+    if forbidden:
+        raise HTTPException(
+            status_code=403,
+            detail=f"System entity cannot modify: {', '.join(forbidden)}",
+        )
+
+
 @router.put("/entities/{entity_id}")
 async def update_entity(entity_id: str, req: EntityUpdateRequest) -> dict:
     """更新实体元数据。"""
@@ -473,6 +578,8 @@ async def update_entity(entity_id: str, req: EntityUpdateRequest) -> dict:
         eid = UUID(entity_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid entity_id")
+
+    _check_system_protected(eid, req)
 
     fields = []
     params: list = []
@@ -530,6 +637,21 @@ async def delete_entity(entity_id: str) -> dict:
         eid = UUID(entity_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid entity_id")
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT is_system FROM t_entities WHERE id = %s", (eid,))
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Entity not found")
+                if row[0]:
+                    raise HTTPException(status_code=403, detail="System entity cannot be deleted")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[API/entities] delete check failed: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
     try:
         with get_connection() as conn:

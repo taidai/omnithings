@@ -810,6 +810,7 @@ export interface Alarm {
   rule_name?: string
   node_id: string | null
   node_name?: string
+  entity_is_system?: boolean
   level: AlarmLevel
   message: string
   acknowledged: boolean
@@ -894,6 +895,7 @@ export interface Entity {
   description: string | null
   enabled: boolean
   binding_count: number
+  is_system?: boolean
 }
 
 export interface EntityBinding {
@@ -907,10 +909,12 @@ export interface EntityBinding {
   enabled: boolean
   tag_name?: string
   tag_display_name?: string
+
   node_name?: string
+  entity_is_system?: boolean
 }
 
-export interface EntityRealtime {
+ export interface EntityRealtime {
   entity_id: string
   entity_name: string
   entity_display_name: string | null

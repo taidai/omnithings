@@ -125,7 +125,10 @@ export default function EntityManagerPage() {
               className={`p-3 rounded-xl cursor-pointer transition-colors ${selected?.id === e.id ? 'bg-[#52c41a] text-white' : 'bg-gray-50 hover:bg-gray-100'}`}
             >
               <div className="flex items-center justify-between">
-                <span className="font-medium text-sm">{e.display_name || e.name}</span>
+                <span className="font-medium text-sm flex items-center gap-2">
+                  {e.display_name || e.name}
+                  {e.is_system && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${selected?.id === e.id ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'}`}>系统</span>}
+                </span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${e.entity_type === 'R' ? 'bg-blue-100 text-blue-700' : e.entity_type === 'W' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>{e.entity_type}</span>
               </div>
               <div className={`text-xs mt-1 ${selected?.id === e.id ? 'text-white/80' : 'text-gray-400'}`}>{e.name} · 绑定 {e.binding_count} 个点位</div>
@@ -143,12 +146,15 @@ export default function EntityManagerPage() {
           <div className="space-y-4">
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-lg font-bold text-gray-800">{detail.display_name || detail.name}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-gray-800">{detail.display_name || detail.name}</h3>
+                  {detail.is_system && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">系统</span>}
+                </div>
                 <div className="text-xs text-gray-500 mt-1">{detail.name} · {detail.data_type} · {detail.entity_type} · {detail.category || '未分类'}</div>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setEditing(detail)} className="neu-btn px-3 py-1.5 text-xs">编辑</button>
-                <button onClick={() => handleDelete(detail.id)} className="neu-btn px-3 py-1.5 text-xs text-red-500">删除</button>
+                {!detail.is_system && <button onClick={() => handleDelete(detail.id)} className="neu-btn px-3 py-1.5 text-xs text-red-500">删除</button>}
               </div>
             </div>
 
@@ -213,20 +219,20 @@ function EntityForm({ categories, initial, onClose, onSubmit }: any) {
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
       <div className="neu-card p-5 w-[480px] max-h-[90vh] overflow-y-auto">
-        <h3 className="text-base font-bold mb-4">{initial ? '编辑实体' : '新建实体'}</h3>
+        <h3 className="text-base font-bold mb-4">{initial ? `编辑实体${initial.is_system ? '（系统内置）' : ''}` : '新建实体'}</h3>
         <div className="space-y-3">
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="实体全局名，如 pcs.activePower" className="neu-inset w-full px-3 py-2 text-xs" disabled={!!initial} />
           <input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="显示名" className="neu-inset w-full px-3 py-2 text-xs" />
           <div className="grid grid-cols-2 gap-3">
-            <select value={form.entity_type} onChange={(e) => setForm({ ...form, entity_type: e.target.value as any })} className="neu-inset w-full px-3 py-2 text-xs">
+            <select value={form.entity_type} onChange={(e) => setForm({ ...form, entity_type: e.target.value as any })} className="neu-inset w-full px-3 py-2 text-xs" disabled={initial?.is_system}>
               {ENTITY_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
-            <select value={form.data_type} onChange={(e) => setForm({ ...form, data_type: e.target.value })} className="neu-inset w-full px-3 py-2 text-xs">
+            <select value={form.data_type} onChange={(e) => setForm({ ...form, data_type: e.target.value })} className="neu-inset w-full px-3 py-2 text-xs" disabled={initial?.is_system}>
               {DATA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="单位" className="neu-inset w-full px-3 py-2 text-xs" />
-          <input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="分类，如 pcs / bms / meter" list="cat-list" className="neu-inset w-full px-3 py-2 text-xs" />
+          <input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="分类，如 pcs / bms / meter" list="cat-list" className="neu-inset w-full px-3 py-2 text-xs" disabled={initial?.is_system} />
           <datalist id="cat-list">{categories.map((c: string) => <option key={c} value={c} />)}</datalist>
           <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="描述" className="neu-inset w-full px-3 py-2 text-xs h-16" />
           <label className="flex items-center gap-2 text-xs">

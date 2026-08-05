@@ -201,6 +201,9 @@ export default function NodeEntityPanel({ nodeId }: Props) {
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-gray-800 truncate">
                       {b.entity_display_name || b.entity_name}
+                      {b.entity_is_system && (
+                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">系统</span>
+                      )}
                       <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600">
                         {b.entity_type}
                       </span>
