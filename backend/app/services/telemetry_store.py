@@ -277,3 +277,63 @@ def query_latest_values(
             rows = [dict(zip(columns, row)) for row in cur.fetchall()]
 
     return rows
+
+
+_UPSERT_LATEST_SQL = """
+INSERT INTO t_telemetry_latest (
+    node_id, tag_id, ts, value_float, value_int,
+    value_bool, value_str, is_virtual, quality
+) VALUES %s
+ON CONFLICT (node_id, tag_id) DO UPDATE SET
+    ts = EXCLUDED.ts,
+    value_float = EXCLUDED.value_float,
+    value_int = EXCLUDED.value_int,
+    value_bool = EXCLUDED.value_bool,
+    value_str = EXCLUDED.value_str,
+    is_virtual = EXCLUDED.is_virtual,
+    quality = EXCLUDED.quality,
+    updated_at = now()
+"""
+
+
+async def upsert_telemetry_latest(records: list[TelemetryRecord]) -> int:
+    """
+    将遥测记录 upsert 到 t_telemetry_latest 缓存表。
+    每个 (node_id, tag_id) 只保留最新一行。
+    """
+    if not records:
+        return 0
+
+    # 同一批次中可能对同一 (node_id, tag_id) 有多行；按时间戳保留最新一行
+    latest: dict[tuple[UUID, UUID], TelemetryRecord] = {}
+    for r in records:
+        key = (r.node_id, r.tag_id)
+        existing = latest.get(key)
+        if existing is None or r.ts > existing.ts:
+            latest[key] = r
+
+    rows = [
+        (
+            r.node_id,
+            r.tag_id,
+            r.ts,
+            r.value_float,
+            r.value_int,
+            r.value_bool,
+            r.value_str,
+            r.is_virtual,
+            r.quality,
+        )
+        for r in latest.values()
+    ]
+
+    def _upsert():
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                execute_values(cur, _UPSERT_LATEST_SQL, rows)
+                conn.commit()
+                return cur.rowcount
+
+    updated = await asyncio.to_thread(_upsert)
+    logger.debug("[TSDB] Upsert latest {} rows", updated)
+    return updated
