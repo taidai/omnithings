@@ -4,9 +4,14 @@
 --       并清理 t_node_categories 中与快照相关的字段。
 -- ============================================================
 
--- 1) 移除 t_node_snapshot 的 retention/compression 策略
-SELECT remove_retention_policy('t_node_snapshot', if_exists => TRUE);
-SELECT remove_compression_policy('t_node_snapshot', if_exists => TRUE);
+-- 1) 移除 t_node_snapshot 的 retention/compression 策略（表不存在时忽略错误）
+DO $$
+BEGIN
+    PERFORM remove_retention_policy('t_node_snapshot', if_exists => TRUE);
+    PERFORM remove_compression_policy('t_node_snapshot', if_exists => TRUE);
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'snapshot policies cleanup failed: %', SQLERRM;
+END $$;
 
 -- 2) 删除节点快照表
 DROP TABLE IF EXISTS t_node_snapshot;

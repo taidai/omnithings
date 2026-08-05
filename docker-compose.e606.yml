@@ -39,6 +39,7 @@ services:
       NANOMQ_API_URL: http://127.0.0.1:8081
     volumes:
       - ./backend/app:/app/app:ro
+      - ./init-db:/app/init-db:ro
       - ./frontend/dist:/app/frontend/dist:ro
       - zizu-data:/app/data
       # nanoMQ 配置管理：后端可读写 nanoMQ 配置并重启容器

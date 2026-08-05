@@ -325,19 +325,8 @@ def _extract_first_varname(expression: str | None) -> str | None:
     match = re.search(r"[a-zA-Z_][a-zA-Z0-9_]*", expression)
     return match.group(0) if match else None
 
-def run_rule_tick() -> dict[str, int]:
-    """
-    执行一次 F2 规则 tick。
-
-    Returns:
-        {"evaluated": N, "alarms": N, "controls": N, "errors": N}
-    """
 def _apply_input_mappings(context: dict, input_mappings: dict[str, str] | None) -> dict:
-    """按 inputMappings 把真实 tag 名映射为决策表字段名。
-
-    例如 inputMappings={"soc": "bms_soc"}，则把 context["bms_soc"] 复制为 context["soc"]，
-    供 GoRules 决策表使用。
-    """
+    """按 inputMappings 把真实 tag 名映射为决策表字段名。"""
     if not input_mappings:
         return context
     mapped = dict(context)
@@ -346,6 +335,14 @@ def _apply_input_mappings(context: dict, input_mappings: dict[str, str] | None) 
             mapped[field] = context[tag_name]
     return mapped
 
+
+def run_rule_tick() -> dict[str, int]:
+    """
+    执行一次 F2 规则 tick。
+
+    Returns:
+        {"evaluated": N, "alarms": N, "controls": N, "errors": N}
+    """
 
     from app.services.telemetry_store import get_connection
 

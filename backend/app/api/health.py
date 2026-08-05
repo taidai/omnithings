@@ -6,12 +6,13 @@ GET /api/v1/health/ready → K8s readiness probe
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter
 from loguru import logger
-from pathlib import Path
 
 router = APIRouter()
 
@@ -45,6 +46,22 @@ def set_pipeline(pipeline) -> None:
 def get_pipeline():
     """获取当前 pipeline 实例（供其他 API 模块使用）。"""
     return _pipeline
+
+
+
+
+async def _check_neuron() -> str:
+    try:
+        from app.core.config import settings
+        from app.services.neuron_client import get_neuron_client
+
+        if not settings.neuron_api_url:
+            return "not_configured"
+        client = get_neuron_client()
+        await asyncio.to_thread(client.get_version)
+        return "connected"
+    except Exception:
+        return "disconnected"
 
 
 @router.get("/health")
@@ -134,7 +151,7 @@ async def health_check() -> dict:
             "mqtt": {
                 "status": "connected" if mqtt_ok else ("disconnected" if mqtt_ok is False else "unknown"),
             },
-            "neuron": {"status": "not_configured"},
+            "neuron": {"status": await _check_neuron()},
         },
         "pipeline": pipe_metrics,
         "validation": validation_points,

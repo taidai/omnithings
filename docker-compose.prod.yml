@@ -60,6 +60,7 @@ services:
       # 生产包直接提供 app/ 和 dist/，无需再套 backend/、frontend/
       - ./app:/app/app:ro
       - ./dist:/app/frontend/dist:ro
+      - ./init-db:/app/init-db:ro
       - zizu-data:/app/data
     deploy:
       resources:

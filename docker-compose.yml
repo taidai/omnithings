@@ -100,6 +100,7 @@ services:
       FRONTEND_DIST: /app/frontend/dist
     volumes:
       - zizu-data:/app/data
+      - ./init-db:/app/init-db:ro
       # nanoMQ 配置管理：后端可读写 nanoMQ 配置并重启容器
       - ./config:/app/config:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
