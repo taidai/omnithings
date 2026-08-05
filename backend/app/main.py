@@ -237,6 +237,9 @@ def create_app() -> FastAPI:
     from app.api.entities import router as entities_router
     app.include_router(entities_router, prefix="/api/v1", tags=["Entities"])
 
+    from app.api.fault_maps import router as fault_maps_router
+    app.include_router(fault_maps_router, prefix="/api/v1", tags=["Fault Maps"])
+
      # ---- Static Frontend (F0 可视化 V1) ----
     # 后端直接托管前端 dist，无需独立 nginx 容器
     import os

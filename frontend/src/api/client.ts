@@ -43,6 +43,9 @@ export interface Tag {
   formula: string | null
   formula_type: string | null
   sources: string[] | null
+  alarm_level: string | null
+  fault_map_id: string | null
+  fault_map_name: string | null
 }
 
 export interface HealthStatus {
@@ -363,6 +366,8 @@ export async function batchUpdateTags(
     read_write?: string
     enabled?: boolean
     node_id?: string
+    alarm_level?: string
+    fault_map_id?: string
   },
 ): Promise<any> {
   const res = await fetch(`${API_BASE}/tags/batch`, {
@@ -396,7 +401,7 @@ export function exportTagsCsv(nodeId?: string, search?: string): void {
   document.body.removeChild(a)
 }
 
-export async function updateTag(tagId: string, updates: Partial<Pick<Tag, 'scale_factor' | 'value_offset' | 'unit' | 'display_name'>>): Promise<any> {
+export async function updateTag(tagId: string, updates: Partial<Pick<Tag, 'scale_factor' | 'value_offset' | 'unit' | 'display_name' | 'alarm_level' | 'fault_map_id'>>): Promise<any> {
   const res = await fetch(`${API_BASE}/tags/${tagId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1016,3 +1021,51 @@ export async function writeEntityValue(entityId: string, value: any): Promise<{ 
 
 
 
+
+
+// ── Fault Map API ──
+
+export interface FaultMapEntry {
+  code: string
+  message: string
+}
+
+export interface FaultMap {
+  id: string
+  name: string
+  description: string | null
+  entries: FaultMapEntry[]
+  created_at: string
+  updated_at: string
+}
+
+export async function fetchFaultMaps(): Promise<{ items: FaultMap[]; total: number }> {
+  const res = await fetch(`${API_BASE}/fault-maps`)
+  return res.json()
+}
+
+export async function createFaultMap(data: Omit<FaultMap, 'id' | 'created_at' | 'updated_at'>): Promise<{ id: string; status: string }> {
+  const res = await fetch(`${API_BASE}/fault-maps`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`Create fault map failed: ${res.status}`)
+  return res.json()
+}
+
+export async function updateFaultMap(mapId: string, data: Partial<Omit<FaultMap, 'id' | 'created_at' | 'updated_at'>>): Promise<{ status: string }> {
+  const res = await fetch(`${API_BASE}/fault-maps/${mapId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`Update fault map failed: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteFaultMap(mapId: string): Promise<{ status: string }> {
+  const res = await fetch(`${API_BASE}/fault-maps/${mapId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`Delete fault map failed: ${res.status}`)
+  return res.json()
+}

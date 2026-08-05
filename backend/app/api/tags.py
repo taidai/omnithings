@@ -42,6 +42,8 @@ class TagUpdateRequest(BaseModel):
     formula: str | None = Field(None, description="表达式或聚合来源引用")
     formula_type: str | None = Field(None, description="expression/aggregate/condition")
     sources: list[str] | None = Field(None, description="来源点位 UUID 列表")
+    alarm_level: str | None = Field(None, pattern="^(error1|error2|error3)?$", description="告警级别 error1/error2/error3")
+    fault_map_id: str | None = Field(None, description="故障码映射表 UUID")
 
 
 class TagResponse(BaseModel):
@@ -65,6 +67,9 @@ class TagResponse(BaseModel):
     formula: str | None = None
     formula_type: str | None = None
     sources: list[str] | None = None
+    alarm_level: str | None = None
+    fault_map_id: str | None = None
+    fault_map_name: str | None = None
     # 实时值 (由 /tags/{id} 附加)
     raw_value: float | int | bool | str | None = None
     eng_value: float | None = None
@@ -204,11 +209,13 @@ async def list_tags(
 
     query = f"""
     SELECT
-        t.id, t.node_id, t.name, t.display_name, t.data_type, t.tag_type,
-        t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
-        t.read_write, t.enabled, t.description,
-        t.aggregate_fn, t.formula, t.formula_type, t.sources,
-        n.name AS node_name,
+       t.id, t.node_id, t.name, t.display_name, t.data_type, t.tag_type,
+       t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
+       t.read_write, t.enabled, t.description,
+       t.aggregate_fn, t.formula, t.formula_type, t.sources,
+       n.name AS node_name,
+        t.alarm_level, t.fault_map_id,
+        fm.name AS fault_map_name,
         -- 最新值缓存表 (value_* 列由 Python 层按 data_type 转换)
         latest.ts AS latest_ts,
         latest.value_float,
@@ -218,6 +225,7 @@ async def list_tags(
         latest.quality
     FROM t_tags t
     JOIN t_nodes n ON n.id = t.node_id
+    LEFT JOIN t_fault_maps fm ON fm.id = t.fault_map_id
     LEFT JOIN t_telemetry_latest latest ON latest.tag_id = t.id
     {where}
     ORDER BY
@@ -366,15 +374,18 @@ async def get_tag(tag_id: UUID) -> dict:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT t.id, t.node_id, t.name, t.display_name, t.data_type, t.tag_type,
-                       t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
-                       t.read_write, t.enabled, t.description,
-                       t.aggregate_fn, t.formula, t.formula_type, t.sources,
+               SELECT t.id, t.node_id, t.name, t.display_name, t.data_type, t.tag_type,
+                      t.unit, t.scale_factor, t.value_offset, t.source_path, t.source_type,
+                      t.read_write, t.enabled, t.description,
+                      t.aggregate_fn, t.formula, t.formula_type, t.sources,
+                       t.alarm_level, t.fault_map_id,
+                       fm.name AS fault_map_name,
                        n.name AS node_name,
                        latest.ts, latest.value_float, latest.value_int,
                        latest.value_bool, latest.value_str, latest.quality
                 FROM t_tags t
                 JOIN t_nodes n ON n.id = t.node_id
+                LEFT JOIN t_fault_maps fm ON fm.id = t.fault_map_id
                 LEFT JOIN t_telemetry_latest latest ON latest.tag_id = t.id
                 WHERE t.id = %s
                 """,
@@ -488,6 +499,8 @@ class BatchUpdateRequest(BaseModel):
     read_write: str | None = Field(None, pattern="^[RrWw]+$", description="统一读写权限")
     enabled: bool | None = Field(None, description="统一启用状态")
     node_id: str | None = Field(None, description="统一移动到目标节点 UUID")
+    alarm_level: str | None = Field(None, pattern="^(error1|error2|error3)?$", description="统一告警级别 error1/error2/error3，空字符串表示清除")
+    fault_map_id: str | None = Field(None, description="统一故障码映射表 UUID，空字符串表示清除")
 
 
 @router.put("/tags/batch")
@@ -518,6 +531,12 @@ async def batch_update_tags(req: BatchUpdateRequest) -> dict:
     if req.enabled is not None:
         updates.append("enabled = %s")
         params.append(req.enabled)
+    if req.alarm_level is not None:
+        updates.append("alarm_level = %s")
+        params.append(req.alarm_level if req.alarm_level else None)
+    if req.fault_map_id is not None:
+        updates.append("fault_map_id = %s")
+        params.append(UUID(req.fault_map_id) if req.fault_map_id else None)
     if req.node_id is not None:
         try:
             target_node = UUID(req.node_id)
@@ -616,6 +635,11 @@ async def update_tag(tag_id: UUID, req: TagUpdateRequest) -> dict:
     from app.services.telemetry_store import get_connection
 
     data = req.model_dump(exclude_none=True)
+
+    if "alarm_level" in data:
+        data["alarm_level"] = data["alarm_level"].lower() if data["alarm_level"] else None
+    if "fault_map_id" in data:
+        data["fault_map_id"] = UUID(data["fault_map_id"]) if data["fault_map_id"] else None
 
     # 校验 LogicalTag 字段
     if "aggregate_fn" in data and data["aggregate_fn"] not in _AGG_FNS:
@@ -798,6 +822,8 @@ class TagCreateRequest(BaseModel):
     formula: str | None = Field(None, description="表达式或聚合来源引用")
     formula_type: str | None = Field("expression", description="expression/aggregate/condition")
     sources: list[str] = Field(default_factory=list, description="来源点位 UUID 列表")
+    alarm_level: str | None = Field(None, pattern="^(error1|error2|error3)?$", description="告警级别 error1/error2/error3")
+    fault_map_id: str | None = Field(None, description="故障码映射表 UUID")
 
 
 @router.post("/tags", status_code=status.HTTP_201_CREATED)
@@ -816,6 +842,9 @@ async def create_tag(req: TagCreateRequest) -> dict:
         node_uuid = UUID(req.node_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid node_id (not a UUID)")
+
+    alarm_level = req.alarm_level.lower() if req.alarm_level else None
+    fault_map_uuid = UUID(req.fault_map_id) if req.fault_map_id else None
 
     data_type = req.data_type.upper()
     if data_type not in {"FLOAT", "INT", "BOOL", "STRING", "ENUM"}:
@@ -855,12 +884,18 @@ async def create_tag(req: TagCreateRequest) -> dict:
                 if cur.fetchone():
                     raise HTTPException(status_code=409, detail="Tag name already exists on this node")
 
+                if fault_map_uuid:
+                    cur.execute("SELECT id FROM t_fault_maps WHERE id = %s", (fault_map_uuid,))
+                    if not cur.fetchone():
+                        raise HTTPException(status_code=404, detail="Fault map not found")
+
                 cur.execute(
                     """
                     INSERT INTO t_tags (node_id, name, display_name, data_type, tag_type,
                                         unit, description, read_write, source_type, source_path,
-                                        aggregate_fn, formula, formula_type, sources, enabled)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                                        aggregate_fn, formula, formula_type, sources,
+                                        alarm_level, fault_map_id, enabled)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
                     RETURNING id
                     """,
                     (
@@ -868,7 +903,7 @@ async def create_tag(req: TagCreateRequest) -> dict:
                         req.unit, req.description, req.read_write.upper(), source_type, req.source_path,
                         req.aggregate_fn, req.formula,
                         req.formula_type if req.tag_type == "LOGICAL" else None,
-                        source_uuids,
+                        source_uuids, alarm_level, fault_map_uuid,
                     ),
                 )
                 new_id = cur.fetchone()[0]

@@ -5,6 +5,7 @@ import {
   type PipelineConfig, type SqlQueryResult, type MqttConfig,
 } from '../api/client'
 import DataBrowser from './DataBrowser'
+import FaultMapManager from './FaultMapManager'
 
 export default function AdminPanel() {
   // 入库节拍
@@ -185,6 +186,9 @@ export default function AdminPanel() {
 
       {/* 级联数据查询 */}
       <DataBrowser />
+
+      {/* 故障码映射表 */}
+      <FaultMapManager />
 
       {/* SQL 查询 */}
       <div className="neu-card p-4">

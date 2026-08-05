@@ -37,6 +37,7 @@ from app.services.normalizer import TagNormalizationRule, normalize
 from app.services.parser import parse_neuron_json
 from app.services.alarm_processor import process_alarm_message, ERROR_LEVELS
 from app.services.telemetry_store import batch_insert_telemetry, upsert_telemetry_latest, TelemetryRecord
+from app.services.tag_alarm_engine import process_tag_alarms
 
 
 class DataPipeline:
@@ -56,6 +57,7 @@ class DataPipeline:
         self._rules: dict[str, TagNormalizationRule] = {}  # {tag_name: rule}
         self._node_id_map: dict[str, UUID] = {}            # {node_name: node_id}
         self._tag_id_map: dict[str, UUID] = {}             # {tag_name: tag_id}
+        self._alarm_tag_map: dict[UUID, dict] = {}         # {tag_id: alarm meta}
         # Neuron 点位按 source_path 精确映射: {(neuron_node, group, tag_name): (node_id, tag_id, rule)}
         self._neuron_tag_map: dict[tuple[str, str, str], tuple[UUID, UUID, TagNormalizationRule]] = {}
 
@@ -216,6 +218,16 @@ class DataPipeline:
         # ── Hook 3: 持久化 (缓冲写入) (~30 行) ──
         records = self._to_records(normalized)
         should_flush = False
+        if records and self._alarm_tag_map:
+            try:
+                alarm_result = await asyncio.to_thread(
+                    process_tag_alarms,
+                    [r.model_dump() for r in records],
+                    self._alarm_tag_map,
+                )
+                logger.debug("[Pipeline] Tag alarms processed: {}", alarm_result)
+            except Exception as e:
+                logger.error("[Pipeline] Tag alarm processing failed: {}", e)
         async with self._buffer_lock:
             self._buffer.extend(records)
             should_flush = len(self._buffer) >= settings.pipeline_batch_size
@@ -370,9 +382,34 @@ class DataPipeline:
             self._tag_id_map = new_tag_id_map
             self._neuron_tag_map = new_neuron_tag_map
 
+            # 加载告警分级配置（alarm_level + fault_map entries）
+            def _fetch_alarm_meta() -> dict[UUID, dict]:
+                with get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            SELECT t.id AS tag_id, t.name AS tag_name, t.alarm_level,
+                                   t.fault_map_id, fm.entries
+                            FROM t_tags t
+                            LEFT JOIN t_fault_maps fm ON fm.id = t.fault_map_id
+                            WHERE t.alarm_level IN ('error1', 'error2', 'error3')
+                              AND t.enabled = TRUE
+                        """)
+                        meta: dict[UUID, dict] = {}
+                        for row in cur.fetchall():
+                            tag_id, tag_name, alarm_level, fault_map_id, entries = row
+                            meta[tag_id] = {
+                                "tag_name": tag_name,
+                                "alarm_level": alarm_level,
+                                "fault_map_id": fault_map_id,
+                                "fault_map_entries": entries or [],
+                            }
+                        return meta
+
+            self._alarm_tag_map = _fetch_alarm_meta()
+
             logger.info(
-                "[Pipeline] Loaded {} tag rules, {} neuron source-path mappings",
-                len(self._rules), len(self._neuron_tag_map)
+                "[Pipeline] Loaded {} tag rules, {} neuron source-path mappings, {} alarm tags",
+                len(self._rules), len(self._neuron_tag_map), len(self._alarm_tag_map)
             )
 
         except Exception as e:

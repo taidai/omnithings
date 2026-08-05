@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  fetchTags, updateTag, batchUpdateTags, deleteTag, createTag, fetchNodes, fetchAlarmCounts, connectTelemetryWS,
-  type Tag, type TelemetryUpdate, type TagCreateInput,
+  fetchTags, updateTag, batchUpdateTags, deleteTag, createTag, fetchNodes, fetchAlarmCounts, connectTelemetryWS, fetchFaultMaps,
+  type Tag, type TelemetryUpdate, type TagCreateInput, type FaultMap,
 } from '../api/client'
 import EditableCell from './EditableCell'
 import TrendChart from './TrendChart'
@@ -46,6 +46,9 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
   const [batchEnabled, setBatchEnabled] = useState<boolean | ''>('')
   const [batchTargetNode, setBatchTargetNode] = useState('')
   const [nodes, setNodes] = useState<Node[]>([])
+  const [faultMaps, setFaultMaps] = useState<FaultMap[]>([])
+  const [batchAlarmLevel, setBatchAlarmLevel] = useState<'error1' | 'error2' | 'error3' | ''>('')
+  const [batchFaultMapId, setBatchFaultMapId] = useState<string>('__keep__')
   const [batchSaving, setBatchSaving] = useState(false)
   const [trendTag, setTrendTag] = useState<Tag | null>(null)
   const [editingTag, setEditingTag] = useState<Tag | null>(null)
@@ -81,6 +84,7 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
 
   useEffect(() => {
     fetchNodes().then(setNodes).catch(() => {})
+    fetchFaultMaps().then((d) => setFaultMaps(d.items)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -147,6 +151,9 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
     if (batchEnabled !== '') updates.enabled = batchEnabled
     if (batchTargetNode !== '') updates.node_id = batchTargetNode
 
+    if (batchAlarmLevel !== '') updates.alarm_level = batchAlarmLevel
+    if (batchFaultMapId !== '__keep__') updates.fault_map_id = batchFaultMapId === '__clear__' ? '' : batchFaultMapId
+
     if (Object.keys(updates).length === 0) {
       alert('请至少选择一项批量操作')
       return
@@ -158,9 +165,13 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
       setBatchScale('')
       setBatchOffset('')
       setBatchUnit('')
-      setBatchReadWrite('')
-      setBatchEnabled('')
-      setBatchTargetNode('')
+             setBatchReadWrite('')
+             setBatchEnabled('')
+             setBatchTargetNode('')
+              setBatchAlarmLevel('')
+              setBatchFaultMapId('__keep__')
+      setBatchAlarmLevel('')
+      setBatchFaultMapId('__keep__')
       loadTags()
     } catch {
       alert('批量更新失败')
@@ -414,6 +425,33 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
               ))}
             </select>
           </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-600">告警级别:</label>
+            <select
+              value={batchAlarmLevel}
+              onChange={(e) => setBatchAlarmLevel(e.target.value as any)}
+              className="neu-input px-2 py-1 text-xs bg-transparent w-28"
+            >
+              <option value="">不变</option>
+              <option value="error1">error1 (CRITICAL)</option>
+              <option value="error2">error2 (MAJOR)</option>
+              <option value="error3">error3 (WARNING)</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-600">故障表:</label>
+            <select
+              value={batchFaultMapId}
+              onChange={(e) => setBatchFaultMapId(e.target.value)}
+              className="neu-input px-2 py-1 text-xs bg-transparent min-w-[120px]"
+            >
+              <option value="__keep__">不变</option>
+              <option value="__clear__">清除</option>
+              {faultMaps.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
           <button
             onClick={handleBatchApply}
             disabled={batchSaving}
@@ -507,6 +545,18 @@ export default function NodeTagPanel({ nodeId }: NodeTagPanelProps) {
                       >
                         <div className="font-medium text-gray-800 whitespace-nowrap underline decoration-dotted underline-offset-2 decoration-gray-300 hover:decoration-[#52c41a]">
                           {tag.display_name || tag.name}
+                          {tag.alarm_level && (
+                            <span className={`ml-2 text-[10px] px-1 py-0.5 rounded border ${
+                              tag.alarm_level === 'error1' ? 'bg-red-100 text-red-700 border-red-200' :
+                              tag.alarm_level === 'error2' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                              'bg-amber-100 text-amber-700 border-amber-200'
+                            }`}>{tag.alarm_level}</span>
+                          )}
+                          {tag.fault_map_name && (
+                            <span className="ml-2 text-[10px] px-1 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-200">
+                              {tag.fault_map_name}
+                            </span>
+                          )}
                         </div>
                         <div className="text-gray-400 text-[11px] whitespace-nowrap">{tag.name}</div>
                       </button>
