@@ -5,6 +5,7 @@ import {
   type PipelineConfig, type SqlQueryResult, type MqttConfig,
 } from '../api/client'
 import DataBrowser from './DataBrowser'
+import NanoMQManager from './NanoMQManager'
 import FaultMapManager from './FaultMapManager'
 
 export default function AdminPanel() {
@@ -189,6 +190,9 @@ export default function AdminPanel() {
 
       {/* 故障码映射表 */}
       <FaultMapManager />
+
+      {/* nanoMQ 配置与管理 */}
+      <NanoMQManager />
 
       {/* SQL 查询 */}
       <div className="neu-card p-4">

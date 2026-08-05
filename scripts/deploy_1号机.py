@@ -35,14 +35,12 @@ PATHS_TO_SYNC = [
     "frontend/dist",
     "VERSION",
     "init-db",
+    "config",
+    "docker-compose.yml",
+    "docker-compose.e606.yml",
 ]
 
-NEW_MIGRATIONS = [
-    "migration_011_entities.sql",
-    "migration_012_standard_entities.sql",
-    "migration_013_drop_snapshots.sql",
-    "migration_014_alarm_level_fault_map.sql",
-]
+NEW_MIGRATIONS = []
 
 
 def log(msg):
@@ -99,7 +97,7 @@ def upload_and_extract(tar_path):
 
     log(f"Extracting to {REMOTE_DIR} ...")
     rc, out, err = sudo_exec(client,
-        f"cd {REMOTE_DIR} && rm -rf backend/app frontend/dist VERSION init-db && "
+        f"cd {REMOTE_DIR} && rm -rf backend/app frontend/dist VERSION init-db config docker-compose.yml docker-compose.e606.yml .env.example && "
         f"tar -xzf {remote_tar} -C {REMOTE_DIR} && "
         f"rm -rf {REMOTE_DIR}/backend/app/__pycache__ && "
         f"find {REMOTE_DIR}/backend/app -type d -name __pycache__ -exec rm -rf {{}} + 2>/dev/null; "
@@ -162,6 +160,47 @@ def recreate_backend(client):
     print(out)
 
 
+def ensure_env_vars(client):
+    log("Ensuring nanoMQ env vars in .env ...")
+    env_path = f"{REMOTE_DIR}/.env"
+    rc, out, err = sudo_exec(client, f"cat {env_path} 2>/dev/null || true")
+    current = out or ""
+    additions = []
+    required = {
+        "NANOMQ_API_URL": "http://127.0.0.1:8081",
+        "NANOMQ_API_USERNAME": "admin",
+        "NANOMQ_API_PASSWORD": "public",
+        "NANOMQ_CONF_PATH": "/app/config/nanomq.conf",
+    }
+    for key, value in required.items():
+        if key not in current:
+            additions.append(f"{key}={value}")
+    if additions:
+        block = "\\n# ---- nanoMQ REST API (auto-added by deploy) ----\\n" + "\\n".join(additions)
+        rc, out, err = sudo_exec(client, f"echo -e '{block}' >> {env_path}")
+        if rc != 0:
+            log(f"Append env failed: {err}")
+            raise RuntimeError("env update failed")
+        log("Env vars appended")
+    else:
+        log("Env vars already present")
+
+
+def recreate_nanomq(client):
+    log("Recreating nanomq container ...")
+    rc, out, err = sudo_exec(client,
+        f"cd {REMOTE_DIR} && docker compose -f docker-compose.yml -f docker-compose.e606.yml "
+        f"up -d --no-build --force-recreate nanomq",
+        timeout=180
+    )
+    if rc != 0:
+        log(f"Recreate nanomq failed: {err}")
+        raise RuntimeError("recreate nanomq failed")
+    log("nanomq container recreated")
+    time.sleep(5)
+
+
+
 def main():
     skip_build = "--skip-build" in sys.argv
     skip_migrations = "--skip-migrations" in sys.argv
@@ -171,6 +210,8 @@ def main():
     client = None
     try:
         client = upload_and_extract(tar_path)
+        ensure_env_vars(client)
+        recreate_nanomq(client)
         if not skip_migrations:
             apply_migrations(client)
         recreate_backend(client)

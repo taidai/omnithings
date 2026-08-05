@@ -1069,3 +1069,104 @@ export async function deleteFaultMap(mapId: string): Promise<{ status: string }>
   if (!res.ok) throw new Error(`Delete fault map failed: ${res.status}`)
   return res.json()
 }
+
+// ── nanoMQ 管理 API ──
+
+export interface NanoMQStatus {
+  brokers?: any
+  nodes?: any
+  metrics?: any
+  error?: boolean
+  status_code?: number
+  message?: any
+}
+
+export interface NanoMQClientInfo {
+  client_id: string
+  username?: string
+  ipaddress?: string
+  port?: number
+  proto_name?: string
+  connected_at?: string
+  keepalive?: number
+}
+
+export interface NanoMQSubscription {
+  clientid: string
+  topic: string
+  qos: number
+}
+
+export interface NanoMQACLRule {
+  action: 'pub' | 'sub' | 'all'
+  permit: 'allow' | 'deny'
+  username?: string
+  clientid?: string
+  ipaddr?: string
+  topic: string
+}
+
+export async function fetchNanoMQStatus(): Promise<NanoMQStatus> {
+  const res = await fetch(`${API_BASE}/nanomq/status`)
+  return res.json()
+}
+
+export async function fetchNanoMQClients(): Promise<{ data?: NanoMQClientInfo[]; [k: string]: any }> {
+  const res = await fetch(`${API_BASE}/nanomq/clients`)
+  if (!res.ok) throw new Error(`Fetch clients failed: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchNanoMQSubscriptions(): Promise<{ data?: NanoMQSubscription[]; [k: string]: any }> {
+  const res = await fetch(`${API_BASE}/nanomq/subscriptions`)
+  if (!res.ok) throw new Error(`Fetch subscriptions failed: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchNanoMQACL(): Promise<{ data?: NanoMQACLRule[]; [k: string]: any }> {
+  const res = await fetch(`${API_BASE}/nanomq/acl`)
+  if (!res.ok) throw new Error(`Fetch ACL failed: ${res.status}`)
+  return res.json()
+}
+
+export async function updateNanoMQACL(rules: NanoMQACLRule[]): Promise<{ [k: string]: any }> {
+  const res = await fetch(`${API_BASE}/nanomq/acl`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rules }),
+  })
+  if (!res.ok) throw new Error(`Update ACL failed: ${res.status}`)
+  return res.json()
+}
+
+export async function publishNanoMQMessage(topic: string, payload: string, qos = 0, retain = false): Promise<{ [k: string]: any }> {
+  const res = await fetch(`${API_BASE}/nanomq/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topic, payload, qos, retain }),
+  })
+  if (!res.ok) throw new Error(`Publish failed: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchNanoMQConfig(): Promise<{ content: string; path: string }> {
+  const res = await fetch(`${API_BASE}/nanomq/config`)
+  if (!res.ok) throw new Error(`Fetch config failed: ${res.status}`)
+  return res.json()
+}
+
+export async function updateNanoMQConfig(content: string): Promise<{ saved: boolean; path: string }> {
+  const res = await fetch(`${API_BASE}/nanomq/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) throw new Error(`Update config failed: ${res.status}`)
+  return res.json()
+}
+
+export async function restartNanoMQ(): Promise<{ restarted: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/nanomq/restart`, { method: 'POST' })
+  if (!res.ok) throw new Error(`Restart failed: ${res.status}`)
+  return res.json()
+}

@@ -59,6 +59,7 @@ services:
       - "8883:8883"
       - "8083:8083"
       - "8084:8084"
+      - "8081:8081"
     volumes:
       - ./config/nanomq.conf:/usr/local/nanomq/nanomq.conf:ro
       - nanomq_data:/usr/local/nanomq/data
@@ -99,6 +100,9 @@ services:
       FRONTEND_DIST: /app/frontend/dist
     volumes:
       - zizu-data:/app/data
+      # nanoMQ 配置管理：后端可读写 nanoMQ 配置并重启容器
+      - ./config:/app/config:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     working_dir: /app
     depends_on:
       timescaledb:

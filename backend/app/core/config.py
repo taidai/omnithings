@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     neuron_username: str = "admin"
     neuron_password: str = "0000"
 
+    # ---- nanoMQ REST API ----
+    nanomq_api_url: str = "http://nanomq:8081"
+    nanomq_api_username: str = "admin"
+    nanomq_api_password: str = "public"
+    nanomq_conf_path: str = "/app/config/nanomq.conf"
+
+
     # ---- CORS ----
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
