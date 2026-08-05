@@ -1,8 +1,26 @@
 # ZiZu 会话交接
 
+## 2026-08-05 全局实体：国家标准/国际标准内置实体
+
+- 新增 init-db/migration_012_standard_entities.sql：
+  - 为 t_entities 增加 is_system 字段；
+  - 内置光伏（pv）、储能（ess）、充电桩（charger）三类共 34 个标准实体；
+  - 参考 GB/T 19964、GB/T 36558、GB/T 18487.1、IEC 61850-7-420、IEC 61851。
+- 后端 backend/app/api/entities.py：
+  - 实体列表/详情返回 is_system；
+  - 新增 POST /api/v1/entities/seed 用于重新初始化标准实体；
+  - 系统实体禁止删除，禁止修改 entity_type / data_type / category。
+- 前端：
+  - 全局实体列表与详情页显示「系统」徽章并隐藏删除按钮；
+  - 编辑系统实体时禁用核心元数据字段；
+  - 节点管理-全局实体绑定列表显示「系统」徽章。
+- 版本：升级到 0.4.33。
+- 构建：frontend npm run build 通过。
+- GitHub：main 已推送至 https://github.com/taidai/zizu.git（d6aeeb0）。
+
 ## 当前状态
 
-- 本地版本：**0.4.30**（commit `3d71cb0`）
+- 本地版本：**0.4.33**（commit d6aeeb0）
 - GitHub：`main` 已推送至 `https://github.com/taidai/zizu.git`
 - 2 号机部署：`e606.hlszh.com:3724`（SSH 端口 3723，账号 `holo` / `holo123`）
   - Web：`http://e606.hlszh.com:3724`（实际服务端口 `9000`，FRP 转发）
