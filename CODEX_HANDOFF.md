@@ -1,3 +1,31 @@
+## 2026-08-05 nanoMQ 配置与管理界面（v0.4.40）
+
+- 后端：
+  - 新增 ackend/app/services/nanomq_client.py：使用 urllib 封装 nanoMQ v4 REST API（状态、客户端、订阅、发布、ACL、配置读写）。
+  - 新增 ackend/app/api/nanomq.py：统一暴露 /api/v1/nanomq/* 代理接口，前端无需直连 8081。
+  - ackend/app/core/config.py：新增 NANOMQ_API_URL/USERNAME/PASSWORD/CONF_PATH 配置项。
+  - ackend/app/main.py：注册 nanoMQ router。
+- 前端：
+  - 新增 rontend/src/components/NanoMQManager.tsx：系统工具中的 nanoMQ 管理面板。
+  - 支持 6 个页签：概览、客户端、订阅、发布测试、ACL、配置文件。
+  - 配置文件页可直接编辑 HOCON、保存并远程重启 nanoMQ 容器。
+  - rontend/src/api/client.ts 增加 nanoMQ 相关 API 函数。
+  - rontend/src/components/AdminPanel.tsx 接入 NanoMQManager。
+- 部署与配置：
+  - config/nanomq.conf 启用 http_server（端口 8081，Basic Auth）。
+  - docker-compose.yml 暴露 8081，并为 backend 容器挂载 ./config 与 /var/run/docker.sock。
+  - docker-compose.e606.yml 针对 e606 host 网络设置 NANOMQ_API_URL=http://127.0.0.1:8081，并挂载 config/docker.sock。
+  - .env.example 增加 nanoMQ REST API 环境变量模板。
+  - scripts/deploy_1号机.py：同步 config、docker-compose.yml、docker-compose.e606.yml；部署时自动补全 .env 中的 nanoMQ 变量；按需重建 nanomq 与 backend 容器。
+- 部署修复：
+  - 1 号机原镜像名为 omnithings:latest-arm，docker-compose.e606.yml 中的 zizu:latest-arm 无法拉取，临时改回 omnithings:latest-arm 保证部署成功。
+  - 远程 DB 缺少 	_fault_maps，手动应用 init-db/migration_014_alarm_level_fault_map.sql 后 backend 正常启动。
+- 部署验证：
+  - 1 号机 http://e606.hlszh.com:9000/api/v1/health 返回 ersion: 0.4.40。
+  - /api/v1/nanomq/status 正常返回 nanoMQ 0.25.2-2 运行状态。
+  - /api/v1/nanomq/config 可读取当前 
+anomq.conf。
+- GitHub：commit 9b2ff57 已生成，但 git push 因当前网络中断失败，待恢复后重试。
 ## 2026-08-05 修复 1 号机前端功能不可见（v0.4.39）
 
 - **根因**：v0.4.38 部署时，远程 /home/omnithings/frontend/dist 仍引用旧构建产物（index-BCQ9G83I.js、NodeTreePage-BP1XLU_w.js），导致前端版本号与后端一致，但新功能（告警分级、故障表、全局实体批量绑定等）未在界面呈现。
