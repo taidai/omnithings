@@ -1,3 +1,23 @@
+## 2026-08-05 告警分级与故障码转义
+
+- 数据库：新增 init-db/migration_014_alarm_level_fault_map.sql
+  - 新建 t_fault_maps（故障码映射表）
+  - t_tags 增加 alarm_level（error1/error2/error3）和 fault_map_id
+- 后端：
+  - 新增 backend/app/api/fault_maps.py：故障码映射表 CRUD
+  - 更新 backend/app/api/tags.py：支持 alarm_level / fault_map_id 的增删改查与批量更新
+  - 新增 backend/app/services/tag_alarm_engine.py：根据点位的 alarm_level 与 fault_map 自动创建/恢复告警
+  - 更新 backend/app/services/pipeline.py：在数据流中调用 tag_alarm_engine，并随规则一起重载告警配置
+  - 更新 backend/app/main.py：注册 fault_maps_router
+- 前端：
+  - 新增 frontend/src/components/FaultMapManager.tsx：系统工具中管理故障码映射表
+  - 更新 frontend/src/components/NodeTagPanel.tsx：批量勾选点位后可设置 error1/error2/error3 与绑定故障表
+  - 更新 frontend/src/api/client.ts：新增 FaultMap API 与 Tag 字段
+- 告警分组：告警中心继续按 error1/error2/error3 分组；tag 触发的告警 source_key 即为 error1/2/3，message 优先使用故障码映射描述。
+- 版本：升级到 **0.4.35**。
+- 构建：frontend npm run build 通过；后端 py_compile 通过。
+- GitHub：main 已推送至 https://github.com/taidai/zizu.git（88cdd1e）。
+
 ## 2026-08-05 删除节点快照功能
 
 - 删除后端：
@@ -43,7 +63,7 @@
 
 ## 当前状态
 
-- 本地版本：**0.4.34**（commit 66db3b0）
+- 本地版本：**0.4.35**（commit 88cdd1e）
 - GitHub：`main` 已推送至 `https://github.com/taidai/zizu.git`
 - 2 号机部署：`e606.hlszh.com:3724`（SSH 端口 3723，账号 `holo` / `holo123`）
   - Web：`http://e606.hlszh.com:3724`（实际服务端口 `9000`，FRP 转发）
