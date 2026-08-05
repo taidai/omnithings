@@ -169,3 +169,21 @@
 - 版本：升级到 0.4.31
 - commit: cc29dd6 feat(entities): batch bind/unbind global entities per node
 - 本地构建通过；GitHub push 因当前网络中断失败，待网络恢复后重试
+ - 本地版本：**0.4.38**（commit b708e9d）
+ - 容器：`omnithings` 已重建，health 返回 `version: 0.4.38`，pipeline RUNNING，db_write_errors 0
+## 2026-08-05 部署 1 号机（v0.4.38）
+
+- 修复 `pipeline.py` 引用的 `upsert_telemetry_latest` 在 `telemetry_store.py` 中缺失的问题。
+- 在 `backend/app/services/telemetry_store.py` 中实现 `upsert_telemetry_latest()`：
+  - 对同一批记录的重复 `(node_id, tag_id)` 按时间戳去重，保留最新值；
+  - 使用 `INSERT ... ON CONFLICT (node_id, tag_id) DO UPDATE` 维护 `t_telemetry_latest` 缓存表。
+- 新增 `scripts/deploy_1号机.py`：基于 `paramiko` 一键部署到 1 号机。
+  - 本地 `npm run build` 生成 `frontend/dist`；
+  - tar 打包 `backend/app`、`frontend/dist`、`VERSION`、`init-db`；
+  - SFTP 上传到 `/tmp` 并 sudo 解压到 `/home/omnithings`；
+  - 通过 stdin 方式在 `omnithings-tsdb` 容器中执行 migrations 011-014；
+  - `docker compose ... up -d --force-recreate backend` 重建后端容器；
+  - 支持 `--skip-build` 与 `--skip-migrations` 参数。
+- 版本升级到 **0.4.38**，commit `b708e9d` 已 push 到 `https://github.com/taidai/zizu.git`。
+- 1 号机 `http://e606.hlszh.com:9000/api/v1/health` 返回 `version: 0.4.38`。
+  - pipeline 状态 RUNNING，MQTT 已连接，db_write_errors 为 0。
