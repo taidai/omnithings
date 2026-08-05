@@ -26,7 +26,7 @@ from psycopg2 import sql
 from psycopg2.extras import execute_values
 
 from app.core.config import settings
-from app.models.schemas import NodeSnapshotRecord, NormalizedMessage, TelemetryRecord, Quality
+from app.models.schemas import NormalizedMessage, TelemetryRecord, Quality
 
 # ══════════════════════════════════════
 # 连接池
@@ -161,139 +161,6 @@ def insert_normalized_message(
                 point.tag_name,
             )
     return batch_insert_telemetry(records)
-
-
-# ══════════════════════════════════════
-# 节点快照写入 (数据黑板)
-# ══════════════════════════════════════
-
-_SNAPSHOT_INSERT_SQL = """
-INSERT INTO t_node_snapshot (ts, node_id, node_name, data, raw_data, raw_message, quality)
-VALUES %s
-ON CONFLICT (ts, node_id) DO UPDATE SET
-    data = EXCLUDED.data,
-    raw_data = EXCLUDED.raw_data,
-    raw_message = EXCLUDED.raw_message,
-    quality = EXCLUDED.quality;
-"""
-
-
-async def batch_insert_snapshots(
-    records: list[NodeSnapshotRecord],
-) -> int:
-    """
-    批量写入节点快照到 t_node_snapshot (数据黑板)。
-
-    Args:
-        records: NodeSnapshotRecord 列表
-
-    Returns:
-        成功写入的行数
-    """
-    if not records:
-        return 0
-
-    rows = []
-    for r in records:
-        rows.append((
-            r.ts,
-            r.node_id,
-            r.node_name,
-            psycopg2.extras.Json(r.data),
-            psycopg2.extras.Json(r.raw_data),
-            psycopg2.extras.Json(r.raw_message),
-            r.quality or Quality.GOOD.value,
-        ))
-
-    def _insert():
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                execute_values(cur, _SNAPSHOT_INSERT_SQL, rows)
-                conn.commit()
-                return cur.rowcount
-
-    inserted = await asyncio.to_thread(_insert)
-    logger.debug("[TSDB] Batch insert {} snapshots", inserted)
-    return inserted
-
-
-
-
-_LATEST_UPSERT_SQL = """
-INSERT INTO t_telemetry_latest (node_id, tag_id, ts, value_float, value_int,
-                                value_bool, value_str, is_virtual, quality)
-VALUES %s
-ON CONFLICT (node_id, tag_id) DO UPDATE SET
-    ts = EXCLUDED.ts,
-    value_float = EXCLUDED.value_float,
-    value_int = EXCLUDED.value_int,
-    value_bool = EXCLUDED.value_bool,
-    value_str = EXCLUDED.value_str,
-    is_virtual = EXCLUDED.is_virtual,
-    quality = EXCLUDED.quality,
-    updated_at = now();
-"""
-
-
-async def upsert_telemetry_latest(
-    records: list[TelemetryRecord],
-) -> int:
-    """
-    同步更新 t_telemetry_latest 缓存表。
-
-    与 t_telemetry 一起由 Pipeline 在 flush 时调用，保证最新值读取 O(1)。
-    同一次 flush 中同一 (node_id, tag_id) 可能出现多条，按 ts 去重只保留最新。
-    """
-    if not records:
-        return 0
-
-    # 去重：同一 tag 保留 ts 最新的一条，避免 ON CONFLICT DO UPDATE 同命令冲突
-    latest_by_tag: dict[tuple, TelemetryRecord] = {}
-    for r in records:
-        key = (r.node_id, r.tag_id)
-        existing = latest_by_tag.get(key)
-        if existing is None or r.ts > existing.ts:
-            latest_by_tag[key] = r
-
-    rows = []
-    for r in latest_by_tag.values():
-        rows.append((
-            r.node_id,
-            r.tag_id,
-            r.ts,
-            r.value_float,
-            r.value_int,
-            r.value_bool,
-            r.value_str,
-            r.is_virtual,
-            r.quality or Quality.GOOD.value,
-        ))
-
-    def _upsert():
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                execute_values(cur, _LATEST_UPSERT_SQL, rows)
-                conn.commit()
-                return cur.rowcount
-
-    upserted = await asyncio.to_thread(_upsert)
-    # 同步刷新全局实体最新值缓存
-    try:
-        from app.services.entity_resolver import refresh_entity_latest
-        for r in latest_by_tag.values():
-            refresh_entity_latest(
-                r.tag_id, r.node_id, r.ts,
-                value_float=r.value_float,
-                value_int=r.value_int,
-                value_bool=r.value_bool,
-                value_str=r.value_str,
-                quality=r.quality or Quality.GOOD.value,
-            )
-    except Exception as e:
-        logger.warning("[TSDB] Refresh entity latest failed (non-fatal): {}", e)
-
-    logger.debug("[TSDB] Latest upsert {} records (deduped from {})", upserted, len(records))
-    return upserted
 
 # ══════════════════════════════════════
 # 查询 API

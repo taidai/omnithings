@@ -89,8 +89,6 @@ export interface Category {
   id: string
   name: string
   node_type: string
-  snapshot_enabled: boolean
-  retention_days: number
   description: string | null
 }
 
@@ -312,8 +310,6 @@ export async function fetchCategories(): Promise<Category[]> {
 export async function createCategory(category: {
   name: string
   node_type: string
-  snapshot_enabled: boolean
-  retention_days: number
   description?: string
 }): Promise<any> {
   const res = await fetch(`${API_BASE}/categories`, {
@@ -556,48 +552,6 @@ export async function truncateTable(table: string, confirm: string): Promise<any
   return res.json()
 }
 
-// ── Snapshot API ──
-
-export interface SnapshotPoint {
-  ts: string
-  node_id: string
-  node_name: string
-  data: Record<string, any>
-  raw_data: Record<string, any>
-  quality: number | null
-}
-
-export interface SnapshotResponse {
-  snapshots: SnapshotPoint[]
-  total: number
-  page: number
-  page_size: number
-  total_pages: number
-}
-
-export async function fetchSnapshots(
-  nodeId?: string,
-  range: '1h' | '24h' | '7d' | 'all' = '1h',
-  page = 1,
-  pageSize = 50,
-): Promise<SnapshotResponse> {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize), range })
-  if (nodeId) params.set('node_id', nodeId)
-  const res = await fetch(`${API_BASE}/snapshots?${params}`)
-  return res.json()
-}
-
-export function exportSnapshotsCsv(nodeId?: string, range: '1h' | '24h' | '7d' | 'all' = '1h'): void {
-  const params = new URLSearchParams({ range })
-  if (nodeId) params.set('node_id', nodeId)
-  const url = `${API_BASE}/snapshots/export?${params}`
-  const a = document.createElement('a')
-  a.href = url
-  a.download = ''
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-}
 
 // ── WebSocket ──
 

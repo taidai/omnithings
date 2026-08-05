@@ -462,8 +462,8 @@ async def delete_node(node_id: UUID) -> dict:
             )
             alarms_deleted = cur.rowcount
 
-            # 3) 删除节点：t_tags/t_telemetry/t_telemetry_latest/t_node_snapshot
-            #    均已设置 ON DELETE CASCADE
+            # 3) 删除节点：t_tags/t_telemetry/t_telemetry_latest
+            #    均已设置 ON DELETE CASCADE（t_node_snapshot 已移除）
             cur.execute(
                 f"DELETE FROM t_nodes WHERE id IN ({node_placeholders})",
                 node_ids,

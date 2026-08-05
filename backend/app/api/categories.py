@@ -20,16 +20,12 @@ router = APIRouter()
 class CategoryCreate(BaseModel):
     name: str = Field(..., description="大类名称")
     node_type: str = Field(..., description="节点类型")
-    snapshot_enabled: bool = Field(True, description="是否启用快照")
-    retention_days: int = Field(30, ge=1, le=365, description="快照保留天数")
     description: str | None = Field(None, description="描述")
 
 
 class CategoryUpdate(BaseModel):
     name: str | None = None
     node_type: str | None = None
-    snapshot_enabled: bool | None = None
-    retention_days: int | None = Field(None, ge=1, le=365)
     description: str | None = None
 
 
@@ -41,7 +37,7 @@ async def list_categories() -> dict:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name, node_type, snapshot_enabled, retention_days, description, created_at "
+                "SELECT id, name, node_type, description, created_at "
                 "FROM t_node_categories ORDER BY name"
             )
             columns = [desc[0] for desc in cur.description]
@@ -63,11 +59,11 @@ async def create_category(req: CategoryCreate) -> dict:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO t_node_categories (name, node_type, snapshot_enabled, retention_days, description)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO t_node_categories (name, node_type, description)
+                VALUES (%s, %s, %s)
                 RETURNING id
                 """,
-                (req.name, req.node_type, req.snapshot_enabled, req.retention_days, req.description),
+                (req.name, req.node_type, req.description),
             )
             row = cur.fetchone()
             conn.commit()
@@ -89,12 +85,6 @@ async def update_category(category_id: UUID, req: CategoryUpdate) -> dict:
     if req.node_type is not None:
         updates.append("node_type = %s")
         params.append(req.node_type)
-    if req.snapshot_enabled is not None:
-        updates.append("snapshot_enabled = %s")
-        params.append(req.snapshot_enabled)
-    if req.retention_days is not None:
-        updates.append("retention_days = %s")
-        params.append(req.retention_days)
     if req.description is not None:
         updates.append("description = %s")
         params.append(req.description)

@@ -218,9 +218,6 @@ def create_app() -> FastAPI:
     from app.api.admin import router as admin_router
     app.include_router(admin_router, prefix="/api/v1", tags=["Admin"])
 
-    from app.api.snapshots import router as snapshots_router
-    app.include_router(snapshots_router, prefix="/api/v1", tags=["Snapshots"])
-
     from app.api.neuron import router as neuron_router
     app.include_router(neuron_router, prefix="/api/v1", tags=["Neuron"])
 

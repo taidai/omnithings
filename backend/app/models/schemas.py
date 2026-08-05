@@ -203,21 +203,6 @@ class TelemetryRecord(BaseModel):
             return cls(**common, value_str=str(point.value))
 
 
-class NodeSnapshotRecord(BaseModel):
-    """
-    写入 t_node_snapshot 的节点快照记录 (数据黑板)。
-
-    按时间戳对齐: 同一节点同一时间戳的所有点位聚合为一条 JSONB 记录。
-    """
-    ts: datetime
-    node_id: UUID
-    node_name: str
-    data: dict[str, float | int | bool | str | None] = {}       # 工程值 {tag_name: eng_value}
-    raw_data: dict[str, float | int | bool | str | None] = {}   # 原始值 {tag_name: raw_value}
-    raw_message: dict = {}                                       # 原始 MQTT 报文
-    quality: int = 192
-
-
 # ══════════════════════════════════════
 # 管道运行状态
 # ══════════════════════════════════════

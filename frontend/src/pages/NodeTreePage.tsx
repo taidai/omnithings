@@ -5,12 +5,11 @@ import {
   type Node, type Rule, type Category, type NeuronNode, type NeuronGroup,
 } from '../api/client'
 import NodeTagPanel from '../components/NodeTagPanel'
-import NodeSnapshotPanel from '../components/NodeSnapshotPanel'
 import NodeRealtimePanel from '../components/NodeRealtimePanel'
 import NodeHistoryPanel from '../components/NodeHistoryPanel'
 import NodeEntityPanel from '../components/NodeEntityPanel'
 
-type TabKey = 'overview' | 'realtime' | 'history' | 'tags' | 'snapshots' | 'entities'
+type TabKey = 'overview' | 'realtime' | 'history' | 'tags' | 'entities'
 type FormMode = 'create' | 'edit'
 
 const LAYER_NAMES: Record<number, string> = {
@@ -677,7 +676,6 @@ export default function NodeTreePage() {
                 { key: 'realtime', label: '实时数据' },
                 { key: 'history', label: '历史数据' },
                 { key: 'tags', label: '点位管理' },
-                { key: 'snapshots', label: '节点快照' },
                 { key: 'entities', label: '全局实体' },
               ].map((t) => (
                 <button
@@ -724,7 +722,6 @@ export default function NodeTreePage() {
               {activeTab === 'realtime' && <NodeRealtimePanel nodeId={selectedNode.id} />}
               {activeTab === 'history' && <NodeHistoryPanel nodeId={selectedNode.id} />}
               {activeTab === 'tags' && <NodeTagPanel nodeId={selectedNode.id} />}
-              {activeTab === 'snapshots' && <NodeSnapshotPanel nodeId={selectedNode.id} />}
               {activeTab === 'entities' && <NodeEntityPanel nodeId={selectedNode.id} />}
             </div>
           </>
