@@ -855,6 +855,8 @@ export interface Entity {
   enabled: boolean
   binding_count: number
   is_system?: boolean
+  std_field?: string | null
+  std_ref?: string | null
 }
 
 export interface EntityBinding {
@@ -1015,6 +1017,53 @@ export async function writeEntityValue(entityId: string, value: any): Promise<{ 
     body: JSON.stringify({ value }),
   })
   if (!res.ok) throw new Error(`Write entity failed: ${res.status}`)
+  return res.json()
+}
+
+export function exportEntitiesCsv(category?: string): void {
+  const params = new URLSearchParams()
+  if (category) params.set('category', category)
+  params.set('format', 'csv')
+  const url = `${API_BASE}/entities/export?${params}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+export function exportEntitiesJson(category?: string): void {
+  const params = new URLSearchParams()
+  if (category) params.set('category', category)
+  params.set('format', 'json')
+  const url = `${API_BASE}/entities/export?${params}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+export interface EntityImportResult {
+  created: number
+  updated: number
+  skipped: number
+  errors: string[]
+  dry_run: boolean
+  total: number
+}
+
+export async function importEntitiesFile(file: File, mode: 'upsert' | 'create' = 'upsert', dryRun = false): Promise<EntityImportResult> {
+  const text = await file.text()
+  const params = new URLSearchParams({ mode, dry_run: String(dryRun) })
+  const isJson = file.name.toLowerCase().endsWith('.json') || text.trim().startsWith('[') || text.trim().startsWith('{')
+  const res = await fetch(`${API_BASE}/entities/import?${params}`, { method: 'POST', headers: { 'Content-Type': isJson ? 'application/json' : 'text/csv' }, body: text })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `Import entities failed: ${res.status}`)
+  }
   return res.json()
 }
 

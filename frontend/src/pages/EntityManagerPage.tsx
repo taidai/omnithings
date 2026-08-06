@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchEntities,
   fetchEntity,
@@ -14,6 +14,9 @@ import {
   type EntityBinding,
   type Tag,
   type Node,
+  exportEntitiesCsv,
+  exportEntitiesJson,
+  importEntitiesFile,
 } from '../api/client'
 
 const DATA_TYPES = ['FLOAT', 'INT', 'BOOL', 'STRING', 'ENUM']
@@ -34,6 +37,8 @@ export default function EntityManagerPage() {
   const [tags, setTags] = useState<Tag[]>([])
   const [nodes, setNodes] = useState<Node[]>([])
   const [realtime, setRealtime] = useState<any>(null)
+  const [importing, setImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
     setLoading(true)
@@ -103,13 +108,32 @@ export default function EntityManagerPage() {
     fetchEntity(selected.id).then(setDetail)
   }
 
+  const handleImport = async (file: File) => {
+    setImporting(true)
+    try {
+      const r = await importEntitiesFile(file, 'upsert', false)
+      alert(`导入完成：新建 ${r.created}，更新 ${r.updated}，跳过 ${r.skipped}${r.errors.length ? `，错误 ${r.errors.length} 条` : ''}`)
+      load()
+    } catch (e: any) {
+      alert('导入失败：' + (e?.message || e))
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div className="min-h-0 flex gap-4">
       {/* 左侧列表 */}
       <div className="w-1/3 neu-card p-4 flex flex-col min-h-0">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-bold text-gray-800">全局实体</h2>
-          <button onClick={() => setShowForm(true)} className="neu-btn px-3 py-1.5 text-xs bg-[#52c41a] text-white">新建实体</button>
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => exportEntitiesCsv()} className="neu-btn px-2.5 py-1.5 text-xs">导出CSV</button>
+            <button onClick={() => exportEntitiesJson()} className="neu-btn px-2.5 py-1.5 text-xs">导出JSON</button>
+            <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="neu-btn px-2.5 py-1.5 text-xs">{importing ? '导入中...' : '导入'}</button>
+            <button onClick={() => setShowForm(true)} className="neu-btn px-3 py-1.5 text-xs bg-[#52c41a] text-white">新建</button>
+            <input ref={fileInputRef} type="file" accept=".csv,.json,application/json,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = '' }} />
+          </div>
         </div>
         <input
           value={search}
@@ -151,6 +175,10 @@ export default function EntityManagerPage() {
                   {detail.is_system && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">系统</span>}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">{detail.name} · {detail.data_type} · {detail.entity_type} · {detail.category || '未分类'}</div>
+                {detail.description && <div className="text-[11px] text-gray-400 mt-0.5">{detail.description}</div>}
+                {(detail.std_field || detail.std_ref) && (
+                  <div className="text-[11px] text-gray-400">标准字段: {detail.std_field || '—'} {detail.std_ref ? `· ${detail.std_ref}` : ''}</div>
+                )}
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setEditing(detail)} className="neu-btn px-3 py-1.5 text-xs">编辑</button>

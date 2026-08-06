@@ -76,6 +76,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             mig_result.get("applied"), mig_result.get("skipped"), mig_result.get("errors"),
         )
         init_config_table()
+        # 幂等播种标准全局实体目录（单一数据源）
+        try:
+            from app.core.standard_entities import seed_standard_entities
+            _seed_res = seed_standard_entities()
+            logger.info("[Main] Standard entities seeded: {}", _seed_res.get("seeded"))
+        except Exception as _se:
+            logger.warning("[Main] Standard entity seed (non-fatal): {}", _se)
         persisted_topic = load_mqtt_topics()
         if persisted_topic:
             settings.mqtt_telemetry_topic = persisted_topic

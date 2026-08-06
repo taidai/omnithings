@@ -7,7 +7,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
+import csv
+import io
+import json
+from datetime import datetime, timezone
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -18,6 +23,8 @@ from app.services.entity_resolver import (
     resolve_entity_binding,
     write_entity_value,
 )
+from app.core.standard_entities import STANDARD_ENTITIES, seed_standard_entities
+from app.api.health import _VERSION as APP_VERSION
 
 router = APIRouter()
 
@@ -106,6 +113,8 @@ def _row_to_entity(row: dict) -> dict:
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         "is_system": bool(row.get("is_system", False)),
+        "std_field": row.get("std_field"),
+        "std_ref": row.get("std_ref"),
     }
 
 
@@ -115,69 +124,201 @@ def _row_to_entity(row: dict) -> dict:
 
 
 def _standard_entities_rows() -> list[tuple]:
-    """内置国家标准/国际标准实体定义，与 migration_012_standard_entities.sql 保持一致。"""
-    return [
-        # 光伏
-        ("pv.activePower", "光伏有功功率", "R", "FLOAT", "kW", "pv", "GB/T 19964 / IEC 61850-7-420 光伏发电有功功率"),
-        ("pv.reactivePower", "光伏无功功率", "R", "FLOAT", "kVar", "pv", "GB/T 19964 光伏发电无功功率"),
-        ("pv.powerFactor", "光伏功率因数", "R", "FLOAT", None, "pv", "GB/T 19964 光伏功率因数"),
-        ("pv.voltage", "光伏并网电压", "R", "FLOAT", "V", "pv", "GB/T 19964 光伏并网电压"),
-        ("pv.current", "光伏并网电流", "R", "FLOAT", "A", "pv", "GB/T 19964 光伏并网电流"),
-        ("pv.frequency", "光伏并网频率", "R", "FLOAT", "Hz", "pv", "GB/T 19964 光伏并网频率"),
-        ("pv.irradiance", "光伏辐照度", "R", "FLOAT", "W/m²", "pv", "IEC 61850-7-420 水平面辐照度"),
-        ("pv.moduleTemp", "组件温度", "R", "FLOAT", "°C", "pv", "IEC 61850-7-420 光伏组件温度"),
-        ("pv.ambientTemp", "环境温度", "R", "FLOAT", "°C", "pv", "IEC 61850-7-420 光伏环境温度"),
-        ("pv.dailyEnergy", "光伏日发电量", "R", "FLOAT", "kWh", "pv", "GB/T 19964 光伏日发电量"),
-        ("pv.totalEnergy", "光伏累计发电量", "R", "FLOAT", "kWh", "pv", "GB/T 19964 光伏累计发电量"),
-        ("pv.status", "逆变器状态", "R", "INT", None, "pv", "GB/T 19964 / IEC 61850-7-420 逆变器运行状态"),
-        ("pv.faultCode", "光伏故障代码", "R", "STRING", None, "pv", "GB/T 19964 光伏故障代码"),
-        # 储能
-        ("ess.activePower", "储能有功功率", "R", "FLOAT", "kW", "ess", "GB/T 36558 电化学储能系统有功功率（充电为负，放电为正）"),
-        ("ess.reactivePower", "储能无功功率", "R", "FLOAT", "kVar", "ess", "GB/T 36558 电化学储能系统无功功率"),
-        ("ess.soc", "电池 SOC", "R", "FLOAT", "%", "ess", "GB/T 36558 电池荷电状态 SOC"),
-        ("ess.soh", "电池 SOH", "R", "FLOAT", "%", "ess", "GB/T 36558 电池健康状态 SOH"),
-        ("ess.voltage", "电池总电压", "R", "FLOAT", "V", "ess", "GB/T 36558 电池堆/簇总电压"),
-        ("ess.current", "电池总电流", "R", "FLOAT", "A", "ess", "GB/T 36558 电池堆/簇总电流"),
-        ("ess.maxCellTemp", "最高单体温度", "R", "FLOAT", "°C", "ess", "GB/T 36558 电池最高单体温度"),
-        ("ess.minCellTemp", "最低单体温度", "R", "FLOAT", "°C", "ess", "GB/T 36558 电池最低单体温度"),
-        ("ess.maxCellVoltage", "最高单体电压", "R", "FLOAT", "V", "ess", "GB/T 36558 电池最高单体电压"),
-        ("ess.minCellVoltage", "最低单体电压", "R", "FLOAT", "V", "ess", "GB/T 36558 电池最低单体电压"),
-        ("ess.chargeEnergy", "累计充电电量", "R", "FLOAT", "kWh", "ess", "GB/T 36558 电化学储能累计充电电量"),
-        ("ess.dischargeEnergy", "累计放电电量", "R", "FLOAT", "kWh", "ess", "GB/T 36558 电化学储能累计放电电量"),
-        ("ess.status", "储能系统状态", "R", "INT", None, "ess", "GB/T 36558 电化学储能系统运行状态"),
-        ("ess.mode", "储能运行模式", "RW", "STRING", None, "ess", "GB/T 36558 电化学储能系统运行模式（调度/削峰填谷/需量控制等）"),
-        ("ess.faultCode", "储能故障代码", "R", "STRING", None, "ess", "GB/T 36558 电化学储能系统故障代码"),
-        # 充电桩
-        ("charger.connectorStatus", "充电枪连接状态", "R", "INT", None, "charger", "GB/T 18487.1 / IEC 61851 充电枪连接状态"),
-        ("charger.chargingPower", "充电功率", "R", "FLOAT", "kW", "charger", "GB/T 18487.1 充电桩实时充电功率"),
-        ("charger.chargingCurrent", "充电电流", "R", "FLOAT", "A", "charger", "GB/T 18487.1 充电桩实时充电电流"),
-        ("charger.chargingVoltage", "充电电压", "R", "FLOAT", "V", "charger", "GB/T 18487.1 充电桩实时充电电压"),
-        ("charger.soc", "车辆 SOC", "R", "FLOAT", "%", "charger", "GB/T 18487.1 车辆电池 SOC"),
-        ("charger.chargedEnergy", "已充电量", "R", "FLOAT", "kWh", "charger", "GB/T 18487.1 本次已充电量"),
-        ("charger.connectorTemp", "充电枪温度", "R", "FLOAT", "°C", "charger", "GB/T 18487.1 充电枪温度"),
-        ("charger.faultCode", "充电桩故障代码", "R", "STRING", None, "charger", "GB/T 18487.1 充电桩故障代码"),
-        ("charger.startCharging", "启动充电", "W", "BOOL", None, "charger", "GB/T 18487.1 / IEC 61851 启动充电控制指令"),
-        ("charger.stopCharging", "停止充电", "W", "BOOL", None, "charger", "GB/T 18487.1 / IEC 61851 停止充电控制指令"),
-    ]
+    """内置标准实体定义（单一数据源：app.core.standard_entities）。"""
+    return list(STANDARD_ENTITIES)
 
 
 @router.post("/entities/seed")
 async def seed_entities() -> dict:
-    """重新初始化系统内置实体（幂等）。"""
-    rows = _standard_entities_rows()
-    insert_sql = """
-    INSERT INTO t_entities (name, display_name, entity_type, data_type, unit, category, description, enabled, is_system)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, TRUE)
-    ON CONFLICT (name) DO NOTHING
+    """重新初始化系统内置标准实体（幂等，单一数据源）。"""
+    return seed_standard_entities()
+
+
+@router.get("/entities/export")
+async def export_entities(
+    format: str = Query("csv", pattern="^(csv|json)$", description="导出格式"),
+    category: str | None = Query(None, description="按分类过滤"),
+) -> StreamingResponse:
+    """导出全局实体目录为 CSV(Excel) 或 JSON。"""
+    where = "1=1"
+    params: list = []
+    if category:
+        where += " AND category = %s"
+        params.append(category)
+    query = f"""
+        SELECT name, display_name, entity_type, data_type, unit,
+               category, description, std_field, std_ref, enabled
+        FROM t_entities
+        WHERE {where}
+        ORDER BY category NULLS LAST, name
     """
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.executemany(insert_sql, rows)
-                conn.commit()
-                return {"seeded": len(rows), "ok": True}
+                cur.execute(query, params)
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
     except Exception as e:
-        logger.error("[API/entities] seed failed: {}", e)
+        logger.error("[API/entities] export failed: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    if format == "json":
+        payload = {
+            "version": APP_VERSION,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "count": len(rows),
+            "entities": rows,
+        }
+        data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        return StreamingResponse(
+            iter([data]),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="zizu_entities_{ts}.json"'},
+        )
+
+    # CSV with UTF-8 BOM for Excel
+    buf = io.StringIO()
+    buf.write("\ufeff")
+    writer = csv.writer(buf)
+    writer.writerow(cols)
+    for r in rows:
+        writer.writerow([r[c] if r[c] is not None else "" for c in cols])
+    data = buf.getvalue().encode("utf-8")
+    return StreamingResponse(
+        iter([data]),
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": f'attachment; filename="zizu_entities_{ts}.csv"'},
+    )
+
+
+@router.post("/entities/import")
+async def import_entities(
+    request: Request,
+    mode: str = Query("upsert", pattern="^(upsert|create)$", description="upsert=更新或新建, create=仅新建跳过已存在"),
+    dry_run: bool = Query(False, description="只校验不写库"),
+) -> dict:
+    """导入全局实体目录（CSV/JSON 文本），按 name upsert 或仅新建。"""
+    raw = await request.body()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="replace")
+
+    entries: list[dict] = []
+    stripped = text.lstrip()
+    try:
+        if stripped.startswith("[") or stripped.startswith("{"):
+            data = json.loads(text)
+            if isinstance(data, dict) and "entities" in data:
+                data = data["entities"]
+            if not isinstance(data, list):
+                raise ValueError("JSON must be an array or {entities:[...]}")
+            entries = data
+        else:
+            reader = csv.DictReader(io.StringIO(text))
+            entries = list(reader)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Parse failed: {e}")
+
+    created = 0
+    updated = 0
+    skipped = 0
+    errors: list[str] = []
+    valid_et = {"R", "W", "RW"}
+    valid_dt = {"FLOAT", "INT", "BOOL", "STRING", "ENUM"}
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT name, is_system FROM t_entities")
+                existing = {r[0]: bool(r[1]) for r in cur.fetchall()}
+
+                for i, e in enumerate(entries):
+                    if not isinstance(e, dict):
+                        errors.append(f"row {i}: not an object")
+                        continue
+                    name = (str(e.get("name") or "")).strip()
+                    if not name:
+                        errors.append(f"row {i}: missing name")
+                        continue
+                    et = str(e.get("entity_type") or "R").upper()
+                    dt = str(e.get("data_type") or "FLOAT").upper()
+                    if et not in valid_et:
+                        et = "R"
+                    if dt not in valid_dt:
+                        dt = "FLOAT"
+                    display = e.get("display_name") or None
+                    unit = e.get("unit") or None
+                    category = e.get("category") or None
+                    desc = e.get("description") or None
+                    std_field = e.get("std_field") or None
+                    std_ref = e.get("std_ref") or None
+                    en_val = e.get("enabled")
+                    if isinstance(en_val, str):
+                        enabled = en_val.strip().lower() in ("1", "true", "yes", "y", "t")
+                    elif en_val is None:
+                        enabled = True
+                    else:
+                        enabled = bool(en_val)
+
+                    if name in existing:
+                        if mode == "create":
+                            skipped += 1
+                            continue
+                        if dry_run:
+                            updated += 1
+                            continue
+                        is_sys = existing[name]
+                        if is_sys:
+                            cur.execute(
+                                """UPDATE t_entities SET
+                                     display_name = COALESCE(%s, display_name),
+                                     unit = COALESCE(%s, unit),
+                                     description = COALESCE(%s, description),
+                                     std_field = COALESCE(%s, std_field),
+                                     std_ref = COALESCE(%s, std_ref),
+                                     enabled = %s, updated_at = now()
+                                   WHERE name = %s""",
+                                (display, unit, desc, std_field, std_ref, enabled, name),
+                            )
+                        else:
+                            cur.execute(
+                                """UPDATE t_entities SET
+                                     display_name = COALESCE(%s, display_name),
+                                     entity_type = %s, data_type = %s,
+                                     unit = COALESCE(%s, unit),
+                                     category = COALESCE(%s, category),
+                                     description = COALESCE(%s, description),
+                                     std_field = COALESCE(%s, std_field),
+                                     std_ref = COALESCE(%s, std_ref),
+                                     enabled = %s, updated_at = now()
+                                   WHERE name = %s""",
+                                (display, et, dt, unit, category, desc, std_field, std_ref, enabled, name),
+                            )
+                        updated += 1
+                    else:
+                        if dry_run:
+                            created += 1
+                            continue
+                        cur.execute(
+                            """INSERT INTO t_entities
+                                 (name, display_name, entity_type, data_type, unit, category,
+                                  description, enabled, is_system, std_field, std_ref)
+                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,FALSE,%s,%s)""",
+                            (name, display, et, dt, unit, category, desc, enabled, std_field, std_ref),
+                        )
+                        created += 1
+                        existing[name] = False
+                if not dry_run:
+                    conn.commit()
+        return {"created": created, "updated": updated, "skipped": skipped,
+                "errors": errors, "dry_run": dry_run, "total": len(entries)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[API/entities] import failed: {}", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
