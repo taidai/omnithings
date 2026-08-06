@@ -57,7 +57,7 @@ class DataPipeline:
         self._rules: dict[str, TagNormalizationRule] = {}  # {tag_name: rule}
         self._node_id_map: dict[str, UUID] = {}            # {node_name: node_id}
         self._tag_id_map: dict[str, UUID] = {}             # {tag_name: tag_id}
-        self._alarm_tag_map: dict[UUID, dict] = {}         # {tag_id: alarm meta}
+        self._alarm_tag_map: dict[str, dict] = {}          # {tag_id(str): alarm meta}
         # Neuron 点位按 source_path 精确映射: {(neuron_node, group, tag_name): (node_id, tag_id, rule)}
         self._neuron_tag_map: dict[tuple[str, str, str], tuple[UUID, UUID, TagNormalizationRule]] = {}
 
@@ -383,7 +383,7 @@ class DataPipeline:
             self._neuron_tag_map = new_neuron_tag_map
 
             # 加载告警分级配置（alarm_level + fault_map entries）
-            def _fetch_alarm_meta() -> dict[UUID, dict]:
+            def _fetch_alarm_meta() -> dict[str, dict]:
                 with get_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("""
@@ -394,10 +394,10 @@ class DataPipeline:
                             WHERE t.alarm_level IN ('error1', 'error2', 'error3')
                               AND t.enabled = TRUE
                         """)
-                        meta: dict[UUID, dict] = {}
+                        meta: dict[str, dict] = {}
                         for row in cur.fetchall():
                             tag_id, tag_name, alarm_level, fault_map_id, entries = row
-                            meta[tag_id] = {
+                            meta[str(tag_id)] = {
                                 "tag_name": tag_name,
                                 "alarm_level": alarm_level,
                                 "fault_map_id": fault_map_id,

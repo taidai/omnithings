@@ -92,7 +92,7 @@ def process_tag_alarms(records: list, tag_meta: dict[UUID, dict]) -> dict:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 for record in records:
-                    tag_id = record.get("tag_id")
+                    tag_id = str(record.get("tag_id"))
                     meta = tag_meta.get(tag_id)
                     if not meta:
                         continue
